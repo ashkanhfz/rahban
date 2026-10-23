@@ -1,35 +1,16 @@
-# سناریوی دموی حدود پنج دقیقه
+# Five-minute demo
 
-## ۰۰:۰۰ تا ۰۰:۳۵ — مسئله و نمای کلی
+Use the sample project with its Dockerfile and an account you are authorized to use. Show only operations and results that actually occurred.
 
-«برنامه‌نویس کد دارد، اما تجربهٔ دیپلوی ندارد. راه‌بان مسیر استاندارد انتشار و یک همکار عملیاتی در اختیارش می‌گذارد.»
+| Time | Show |
+|---|---|
+| 00:00–00:30 | The problem: a developer has a project and needs to deploy it on Liara. Open **Deploy**. |
+| 00:30–01:20 | In **Project**, choose **Use sample project** or **Choose ZIP file**. Show Docker detection and project checks, then continue. |
+| 01:20–02:10 | Connect through **Settings → Connect and continue**. In **Destination**, choose a Docker service or review a recommended plan and cost. Show the optional **Advanced settings**. |
+| 02:10–03:20 | Select **Review deployment**, then **Approve deployment**. Enter the service name, check the consent box, and choose **Approve and run**. Follow upload, release, and HTTP checks. |
+| 03:20–04:20 | Show the result and **Open website**. If time permits, select **Use demo environment** under **Settings → Demo environment**, then use **Check service → Test a failure → Trigger HTTP 503**, **Investigate**, and **Review recovery**. |
+| 04:20–05:00 | Explain the result and limitations. Present the repository and demo links. |
 
-داشبورد، محیط انتخاب‌شده، سلامت HTTP و تأییدهای منتظر را نشان دهید. توضیح دهید نمودارها دادهٔ واقعی probe هستند.
+If the build takes longer, show the history of that actual run. Clearly label the local demo. Without a connected account, do not claim a live Liara deployment. Distinguish local rules from optional model advice.
 
-## ۰۰:۳۵ تا ۰۱:۲۰ — بررسی پروژه
-
-به انتشارها بروید و پروژهٔ نمونهٔ Node.js یا ZIP آماده را انتخاب کنید. تشخیص manifest، دستور start، نسخهٔ runtime و SHA256 را نشان دهید.
-
-در اتصال واقعی، سرویس Node.js را از لیارا همگام کنید و پورت را انتخاب کنید. اگر توکن ندارید، این بخش را صرفاً «آمادهٔ اتصال» معرفی کنید؛ دیپلوی واقعی را ادعا نکنید.
-
-## ۰۱:۲۰ تا ۰۲:۱۰ — انتشار واقعی و تأیید، در صورت اتصال
-
-پیشنهاد انتشار، اثر، محدودیت برگشت و تأیید نام دقیق سرویس را نمایش دهید. مسیر upload → release → READY → بررسی HTTP را نشان دهید. build ممکن است از زمان دمو طولانی‌تر باشد؛ از قبل نسخهٔ سالم داشته باشید و تاریخچهٔ واقعی را نمایش دهید.
-
-## ۰۲:۱۰ تا ۰۳:۰۰ — خرابی واقعی در sandbox
-
-به محیط آزمایشی و مرکز رخدادها بروید. «ایجاد خطای ۵۰۳» را بزنید. بررسی مشکل را اجرا کنید؛ پاسخ 503، لاگ DEMO_CONFIG_INVALID و فرضیهٔ پیکربندی ناقص را نشان دهید.
-
-توضیح دهید بدون مدل، قواعد محلی فعال‌اند. اگر مدل پیکربندی شده و رضایت ارسال شواهد فعال است، تحلیل مدل هم ظاهر می‌شود.
-
-## ۰۳:۰۰ تا ۰۴:۰۰ — بازیابی با تأیید
-
-پیشنهاد بازیابی بسازید، نام `sandbox-store` را تأیید کنید. اجرای مراحل و سه بررسی موفق را نشان دهید. رخداد فقط پس از بررسی نتیجه resolved می‌شود.
-
-## ۰۴:۰۰ تا ۰۴:۴۰ — Grafana
-
-داشبورد Rahban Operations را باز کنید. افت وضعیت سلامت، شکست نمونه‌ها و بازیابی را نشان دهید. تأکید کنید CPU/RAM متعلق به control plane است و نرخ probe، ترافیک کاربران نیست.
-
-## ۰۴:۴۰ تا ۰۵:۰۰ — گزارش و حدود
-
-گزارش Markdown و دفتر ثبت اقدامات را نشان دهید. بگویید مسیر فعلی Node.js و اپراتور محلی است؛ مدیریت DNS، دیتابیس و rollback خودکار هنوز انجام نشده است. لینک ریپو و ویدئوی عمومی را در فرم چالش ثبت کنید؛ ارسال فرم فقط یک بار است.
+Explain the scope: Dockerfile and Node.js projects are supported; DNS, databases, and automatic rollback are not managed. Focus the video on user actions and visible results. Keep it around five minutes for submission.

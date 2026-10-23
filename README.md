@@ -1,141 +1,61 @@
-# راه‌بان | Rahban
+# Rahban
 
-همکار فارسی انتشار و پایداری، برای چالش لیارا: پروژه را بررسی می‌کند، پیشنهاد عملیات می‌سازد، برای تغییر حساس تأیید صریح می‌گیرد، سپس نتیجه را با HTTP واقعی بررسی می‌کند.
+A deployment assistant for Liara. Rahban inspects a project, prepares a deployment proposal, asks for approval, and checks the release and HTTP response. It supports projects with a Dockerfile and Node.js projects without one.
 
-**نسخهٔ محلی و سرور برای یک اپراتور است؛ تأیید تولید سازمانی یا یک سامانهٔ چندکاربره نیست.** اتصال واقعی لیارا با تأیید کاربر آزمایش شد: سرویس Node.js مجزا ساخته شد و راه‌بان بستهٔ نمونه را با API لیارا آپلود و منتشر کرد. بدون توکن، سرویس آزمایشی واقعی محلی هم قابل استفاده است. مدل زبانی اختیاری است؛ در نبود آن، نوع تحلیل صریحاً «قواعد تشخیصی» نشان داده می‌شود.
+## Run with Docker
 
-## آزمون واقعی انجام‌شده
+```bash
+docker compose up -d --build
+```
 
-- سرویس: `rahban-demo-1023-a7c9`، پلن زمین و بستهٔ پایه، با تأیید هزینهٔ کاربر.
-- سرویس مقصد: <https://rahban-demo-1023-a7c9.liara.run>؛ ابتدا نمونه و سپس خود پنل راه‌بان روی آن منتشر شد.
-- مسیر: تحلیل بسته → تأیید مقصد → آپلود gzip → ساخت release → READY → بررسی سلامت HTTP.
-- کلید دسترسی یک‌ساعته با تأیید کاربر ساخته و فقط در حافظهٔ سرور محلی استفاده شد؛ در سورس، ZIP یا `.env` قرار نگرفته است.
-- در آزمون واقعی، اعلام READY لیارا چند ثانیه زودتر از پاسخ سالم مسیریاب بود. بررسی سلامت اکنون یک بازهٔ محدود برای گرم‌شدن دارد و سه پاسخ متوالی سالم لازم است. برای job نیازمند بررسی، امکان بررسی مجدد بدون انتشار تازه وجود دارد.
-- آدرس آزمایشی `liara.run` طبق پنل تا هفت روز پس از اولین استقرار فعال است؛ برای ادامه باید دامنهٔ شخصی متصل شود.
-- نسخهٔ سرور راه‌بان با ورود اپراتور منتشر می‌شود؛ Grafana و Prometheus فعلاً محلی‌اند.
+Open `http://localhost:4310`. Compose runs one application container, binds the host port to `127.0.0.1:4310`, and keeps application data in a named volume. The port must be free. Keep the volume when restarting or updating the application.
 
-## شروع سریع در این دستگاه
+For local development, use Node.js 22.13 or later:
 
-- برنامه: <http://localhost:4310>
-- Grafana: <http://localhost:4311/d/rahban-operations/rahban-operations>
-- Prometheus: <http://localhost:9090>
-- اطلاعات ورود Grafana در `data/local-access.txt` است؛ این فایل را منتشر نکنید.
-
-برنامه و ابزارهای پایش هنگام تحویل اجرا شده‌اند. برای اجرای دوباره، از مسیر پروژه:
-
-پیش‌نیاز برنامه Node.js 22.13 یا جدیدتر است. Python فقط برای دانلود runtime پایش استفاده می‌شود.
-
-```powershell
+```bash
 npm ci
 npm run build
 npm start
 ```
 
-برای نصب باینری‌های رسمی پایش روی ویندوز با Python 3.10 یا جدیدتر:
+The server reads `.env` from the project root. It is optional for the local demo; use `.env.example` for connection settings. Local data is stored in `data/rahban.sqlite`.
 
-```powershell
-python scripts/download-runtime.py
-node scripts/start-observability.js
+On Windows, `scripts/start-local.ps1` builds and starts the application in the background. `scripts/stop-local.ps1` stops only the recorded process whose command matches this project. These scripts use the default port, 4310.
+
+## First deployment
+
+1. Open **Settings**, enter the **Liara API token**, and use **Team account** for an optional team ID. Select **Connect and continue**. Connecting lists applications without creating or deploying one.
+2. In **Deploy → Project**, choose **Use sample project**, **Choose ZIP file**, or **Import from GitHub**. A root `Dockerfile` selects Docker; otherwise, Node.js requires `package.json` with a `start` script. The sample includes a Dockerfile. Uploaded code is not executed on the Rahban server.
+3. Continue to **Destination** and select a matching service. Under **Create a new service**, use **Get recommended plan**, then **Review cost and create** if needed. Account funding remains the user's responsibility.
+4. **Advanced settings** lets you change the detected port or 3000, health path `/`, five-second timeout, and enabled build cache. Empty fields use defaults. Set required environment variables in Liara; Rahban does not write their values automatically.
+5. Select **Review deployment**, then **Approve deployment**. In the confirmation dialog, enter the exact service name, check the approval box, and choose **Approve and run**. Rahban uploads the inspected archive and creates a release.
+6. Follow the release and HTTP checks. Success requires three consecutive 2xx responses. Uncertain release polling shows **Needs review**; use **Check health again** before attempting another deployment. A successful deployment offers **Open website**.
+
+Without a token, the local demo supports an HTTP failure, diagnosis, and recovery with approval. It does not demonstrate a live Liara deployment.
+
+## Analysis and limits
+
+Checks run on request or after an operation; there is no periodic observer. Local diagnosis uses logs and HTTP evidence. An optional model requires a Chat Completions-compatible endpoint, model ID, API key, and explicit consent to share evidence. It provides advice and cannot execute operations. Model requests use the provider account's credit.
+
+Deployment to applications with attached disks, private repositories, database management, DNS changes, and automatic rollback are not supported. Environment-variable detection covers JavaScript/TypeScript source only. Liara application CPU/RAM data is not connected, and suggested capacity is not based on load testing.
+
+To host the Rahban panel itself on Liara, build it and create a private package:
+
+```bash
+node scripts/package-cloud.js https://YOUR-APP.liara.run /path/to/rahban-cloud.zip
 ```
 
-دانلودها از Grafana و مخزن رسمی Prometheus است و SHA-256 آن‌ها بررسی می‌شود. در این دستگاه باینری‌ها در `../../work/runtime` قرار گرفته‌اند؛ برای استفادهٔ مجدد:
+The generated password stays in `data/cloud-access.txt`; the package contains its hash. Deploy this package through Liara's Node.js service with a `rahban-data` disk mounted at `/app/data`. Set both the Liara service port and `PORT` environment variable to `4310`, using Node.js 22. Re-enter Liara and model keys in the hosted panel. See [SECURITY.md](SECURITY.md).
 
-```powershell
-node scripts/start-observability.js ../../work/runtime
-```
+## Checks and documentation
 
-اسکریپت `scripts/start-local.ps1` ساخت و اجرای محلی را انجام می‌دهد؛ `scripts/stop-local.ps1` فقط فرایندهای ثبت‌شده‌ای را متوقف می‌کند که نام و مسیرشان مطابقت داشته باشد. مسیر runtime را می‌توان با `-RuntimeRoot` مشخص کرد.
-
-## اجرای Docker
-
-فایل `.env.example` را به `.env` کپی و `GRAFANA_ADMIN_PASSWORD` را با رمز تصادفی طولانی مقداردهی کنید. سپس:
-
-```powershell
-docker compose up -d --build
-```
-
-پیش از این کار، نسخهٔ native را متوقف کنید تا پورت‌ها تداخل نداشته باشند. نام کاربری Grafana در Compose برابر `rahban` است. پورت‌ها فقط به loopback متصل‌اند. هیچ volume موجودی را برای راه‌اندازی حذف نکنید.
-
-در زمان پیاده‌سازی، Docker Hub از این شبکه 403 برگرداند؛ اجرای کانتینری تا دریافت ایمیج‌ها قابل آزمون نبود. تنظیمات Compose تحویل داده شده و برای اجرای جاری از باینری‌های رسمی ویندوز استفاده شده است.
-
-## اتصال لیارا
-
-۱. در «اتصال‌ها و تنظیمات» توکن API لیارا و در صورت نیاز شناسهٔ تیم را وارد کنید.
-۲. «بررسی و ذخیرهٔ اتصال» یک درخواست خواندنی برای فهرست سرویس‌ها می‌فرستد؛ هیچ سرویس یا هزینه‌ای ایجاد نمی‌کند.
-۳. محیط را به «لیارا» تغییر دهید تا سرویس‌ها همگام شوند.
-۴. ZIP، ریپوی عمومی GitHub یا نمونهٔ Node.js را انتخاب کنید. کد روی این دستگاه اجرا نمی‌شود.
-۵. سرویس موجود Node.js و پورت را انتخاب و پیشنهاد انتشار را آماده کنید. کلیدهای محیطی لازم باید قبلاً در پنل لیارا وجود داشته باشند. مقدار آن‌ها به کلاینت برنمی‌گردد.
-۶. در صف تأیید، اثر عملیات را بخوانید، نام دقیق سرویس را وارد کنید و تأیید کنید.
-۷. آپلود، وضعیت release و سه بررسی سلامت ثبت می‌شوند. پذیرش درخواست API به‌تنهایی به معنی سالم‌شدن سایت نیست.
-
-اگر سرویس ندارید، پلن‌ها و بسته‌های واقعی حساب را دریافت کنید. انتخاب شما در پیشنهاد هزینه ثبت می‌شود و پیش از ساخت، تعرفه دوباره مقایسه می‌شود. شارژ حساب با کاربر است؛ مسیر پرداخت خودکار وجود ندارد. قیمت ماهانه برآورد ۷۲۰ ساعت به‌علاوهٔ بستهٔ امکانات است و تضمین صورت‌حساب نیست.
-
-پس از دریافت پلن‌ها، ارزان‌ترین گزینهٔ در دسترس که فرض منابع اولیهٔ پروژه را پوشش دهد به‌صورت پیش‌فرض انتخاب می‌شود. فرض پایه برای Node.js سبک ۰٫۵GB حافظه و برای وابستگی‌های Next/Nest برابر ۱GB است؛ این اعداد نتیجهٔ load test نیستند و تضمین ظرفیت محسوب نمی‌شوند. پیشنهاد و هزینه باید توسط اپراتور بررسی شوند.
-
-توکن UI فقط در حافظهٔ سرور می‌ماند. برای ماندگاری می‌توان از `LIARA_API_TOKEN` در `.env` استفاده کرد. این فایل، `data/` و کلیدها را در GitHub نگذارید.
-
-### اتصال مدل
-
-یک endpoint سازگار با Chat Completions، شناسهٔ مدل و کلید API وارد کنید؛ endpoint باید HTTPS باشد. آدرس پایه نباید شامل `/chat/completions` باشد. می‌توانید endpoint ارائه‌شده در پنل AI لیارا را استفاده کنید؛ شناسه یا تعرفهٔ مدل فرض نشده است.
-
-ارسال شواهد به ارائه‌دهنده، فقط با انتخاب صریح گزینهٔ رضایت فعال می‌شود. الگوهای شناخته‌شدهٔ اسرار از لاگ حذف می‌شوند؛ حذف همهٔ داده‌های حساس تضمین‌شده نیست. مدل تنها توصیه می‌دهد و به ابزار اجرا یا توکن لیارا دسترسی ندارد. قطع مدل، تحلیل محلی را متوقف نمی‌کند.
-
-## تجربهٔ خرابی و بازیابی
-
-۱. در محیط «آزمایشی»، مرکز رخدادها را باز کنید.
-۲. «ایجاد خطای ۵۰۳» را بزنید؛ `/sandbox` واقعاً پاسخ 503 می‌دهد.
-۳. بررسی مشکل، شواهد لاگ و HTTP را جمع‌آوری می‌کند. پس از سه بررسی ناموفق متوالی، بررسی خودکار محلی هم فعال می‌شود؛ هیچ اصلاحی خودکار اجرا نمی‌شود.
-۴. پیشنهاد بازیابی بسازید؛ در صف تأیید نام `sandbox-store` را وارد کنید.
-۵. پیکربندی محلی بازیابی می‌شود. فقط پس از سه بررسی موفق، رخداد بازیابی‌شده اعلام می‌شود.
-۶. گزارش Markdown را دانلود کنید. در Grafana افت و بازیابی متریک واقعی را ببینید.
-
-## پایش واقعی
-
-داشبورد `ops/grafana/dashboards/rahban-operations.json` با ۱۴ پنل به‌صورت فایل provision می‌شود:
-
-- وضعیت HTTP سرویس، موفقیت نمونه‌ها و زمان پاسخ P50/P95؛
-- نرخ بررسی‌های مصنوعی، خط زمانی سلامت و تأییدهای منتظر؛
-- نتیجهٔ عملیات و تعداد بررسی رخدادها؛
-- حافظه، CPU و زمان کارکرد **سرور راه‌بان**.
-
-نرخ probe، ترافیک کاربران نیست. CPU و RAM کنترل‌پلین، منابع اپ لیارا نیستند. منابع اپ لیارا در این نسخه متصل نیستند. هشدارهای Prometheus در `ops/prometheus/alerts.yml` هستند؛ ارسال پیام به بیرون تنظیم نشده است. ناظر سبک هر پنج ثانیه HTTP را بررسی می‌کند؛ مدل زبانی دائماً اجرا نمی‌شود.
-
-## معماری و حدود محصول
-
-توضیح کامل در [ARCHITECTURE.md](ARCHITECTURE.md)، مرزهای امنیتی در [SECURITY.md](SECURITY.md) و سناریوی دموی پنج‌دقیقه‌ای در [DEMO.md](DEMO.md) آمده است.
-
-قابلیت‌های خارج از این نسخه: OAuth گیت‌هاب و ریپوی خصوصی، مدیریت دیتابیس، تغییر خودکار DNS/ایرنیک، تغییر پلن موجود، rollback خودکار، حفظ تنظیم دیسک در انتشار و تشخیص قطعی علت خرابی. انتشار سرویس دارای دیسک مسدود است. هیچ ادعایی دربارهٔ Canary روی API لیارا بدون بررسی قابلیت ارائه نمی‌شود.
-
-## بررسی‌ها
-
-```powershell
+```bash
 npm run check
 npm test
 npm run build
-npm audit
+node scripts/verify-runtime.js
 ```
 
-تست‌های integration سرور جدا با دیتای موقت ایجاد می‌کنند و به لیارا متصل نمی‌شوند. قرارداد adapter با fake transport و رفتار گرم‌شدن با پاسخ‌های متوالی آزمون می‌شود. علاوه بر آن، انتشار واقعی از UI راه‌بان روی حساب لیارا انجام شده است. سناریوی محلی شامل 503، تشخیص، تأیید، رد اجرای دوباره و بازیابی است. گزارش وضعیت جاری در `VALIDATION.json` قرار دارد؛ با `node scripts/verify-runtime.js` تازه می‌شود.
+The last command checks only the running application's `/healthz` endpoint and overwrites `VALIDATION.json` with that result. It does not test Liara deployment or make a paid model request. Automated tests use temporary data and simulated provider responses. Record results for the current revision after running the checks.
 
-## منابع پیاده‌سازی
-
-- [CLI رسمی لیارا](https://github.com/liara-cloud/cli): مسیرهای API، upload، release، logs، plans و restart از کد رسمی بررسی شدند.
-- [مستندات provisioning گرافانا](https://grafana.com/docs/grafana/latest/administration/provisioning/)
-- [مرجع Chat Completions](https://developers.openai.com/api/reference/resources/chat)
-- [Google SRE: Incident Response](https://sre.google/workbook/incident-response/)
-
-برای تحویل چالش، کد و این مستندات را در ریپو و ویدئوی دمو را در محل عمومی مناسب بارگذاری کنید. ویدئو و ارسال فرم چالش در این نسخه انجام نشده است.
-
-## انتشار نسخهٔ سرور
-
-`server/access.js` ورود تک‌اپراتور با رمز scrypt، کوکی Secure، مبدأ دقیق HTTPS، محدودسازی تلاش و خروج را اضافه می‌کند. متریک‌ها و API بدون ورود در اینترنت قابل خواندن نیستند. پیش از انتشار، برنامه را build کنید؛ اسکریپت زیر از فایل‌های صریح سرور و dist یک ZIP خصوصی می‌سازد:
-
-```powershell
-node scripts/package-cloud.js https://YOUR-APP.liara.run ../../work/rahban-cloud.zip
-```
-
-اسکریپت رمز تصادفی را فقط در `data/cloud-access.txt` نگه می‌دارد؛ بستهٔ استقرار فقط hash رمز دارد و هیچ API key یا دیتابیس محلی وارد آن نمی‌شود. آن ZIP را در Drag & Drop سرویس Node.js آپلود کنید. یک دیسک `rahban-data` با مسیر `/app/data` در همان ظرفیت پلن لازم است. `liara.json` شامل پورت 4310، Node 22 و مسیر دیسک است. در تنظیمات لیارا، مقدار متغیر `PORT` را هم روی `4310` بگذارید؛ متغیر باقی‌ماندهٔ `3000` از استقرار قبلی بر کد اولویت دارد. اطلاعات خصوصی استقرار وارد Git نمی‌شوند. توکن‌های لیارا/مدل باید توسط اپراتور در نسخهٔ سرور دوباره وارد شوند و در RAM می‌مانند.
-
-در حالت سرور، لینک localhost برای Grafana نمایش داده نمی‌شود؛ پایش HTTP و نمودار داخلی در دسترس است. انتشار Grafana نیازمند سرویس جداگانه و اتصال امن metrics است.
-
-CI گیت‌هاب تست‌ها، TypeScript، build و audit وابستگی تولید را اجرا می‌کند. انتشار ابری خودکار در CI فعال نیست؛ عملیات زیرساختی از مسیر تأیید اپراتور انجام می‌شود.
+[Architecture and API](ARCHITECTURE.md) · [Security](SECURITY.md) · [Demo](DEMO.md) · [Live deployment procedure](LIVE-DEPLOYMENT.md)

@@ -11,5 +11,5 @@ export function recommendPlan(plans,sizing={minMemoryGB:.5,minCpu:.25},budget=In
     }
   }
   candidates.sort((a,b)=>a.monthlyEstimate-b.monthlyEstimate||a.memoryGB-b.memoryGB);
-  return candidates.length?{...candidates[0],reason:`کم‌هزینه‌ترین گزینهٔ قابل دسترس با حداقل ${sizing.minMemoryGB}GB حافظه و ${sizing.minCpu} هسته بر اساس فرض اولیهٔ پروژه. این انتخاب تضمین ظرفیت نیست؛ پس از انتشار باید مصرف واقعی سنجیده شود.`}:null;
+  return candidates.length?{...candidates[0],reason:`The lowest-cost available option with at least ${sizing.minMemoryGB}GB of memory and ${sizing.minCpu} CPU cores, based on initial project assumptions. This is not a capacity guarantee; measure actual usage after deployment.`}:null;
 }

@@ -1,58 +1,14 @@
-# نتیجهٔ آزمون واقعی لیارا
+# Verify a live Liara deployment
 
-آزمون در ۱ آبان ۱۴۰۵ با تأیید صریح کاربر برای هزینهٔ سرویس و ساخت کلید یک‌ساعته انجام شد.
+This is a procedure for the current revision. It does not record a new successful live deployment.
 
-## منابع ساخته‌شده
+1. Open **Settings**, enter a valid **Liara API token**, and select **Connect and continue**. Keep the key out of reports, screenshots, and the repository.
+2. In **Deploy → Project**, select **Use sample project** and continue to **Destination**. Review port 3000, health path `/`, and build settings under **Advanced settings**.
+3. Choose an existing Docker service or use **Create a new service → Get recommended plan**. Review the estimated cost before approving creation. Creating a service may incur charges; the user funds the account.
+4. Select **Review deployment**, then **Approve deployment**. Confirm the exact service name, check the approval box, and select **Approve and run**.
+5. Follow the upload, release progress, READY state, and three consecutive HTTP 2xx responses. Use **Open website** after success; API acceptance alone does not establish website health.
+6. Record the time, project type, job result, and HTTP evidence from that run. If the job shows **Needs review**, inspect the release and logs and use **Check health again** before deploying again.
 
-- شناسهٔ سرویس: `rahban-demo-1023-a7c9`
-- نوع: Node.js
-- پلن: زمین، بستهٔ امکانات پایه
-- منابع: ۵۱۲MB رم، نیم هستهٔ CPU و ۵GB فضای پلن
-- هزینهٔ نمایش‌داده‌شده در خلاصهٔ پنل با مالیات: ۱٬۱۴۶ تومان در ساعت؛ معادل ماهانهٔ ۸۲۵٬۰۰۰ تومان برای ۳۰ روز.
-- سرویس هنگام تحویل روشن است و هزینهٔ ساعتی آن از اعتبار حساب کسر می‌شود.
+A Node.js project without a Dockerfile requires a Node.js destination. Deployment to applications with attached disks is blocked. Configure required environment variables in Liara before deployment.
 
-## نتیجه
-
-- راه‌بان محلی از طریق API رسمی، فهرست سرویس‌ها را همگام کرد.
-- بستهٔ Node.js از UI راه‌بان بررسی، تأیید، آپلود و منتشر شد.
-- release واقعی: `6adb278b7ebf55567cbea8eb`، نسخهٔ پنل `v1`.
-- پنل لیارا استقرار موفق را ثبت کرد.
-- خروجی در Edge باز و متن «سایت شما آنلاین است» مشاهده شد.
-- سه بررسی متوالی HTTP 200 ثبت و job راه‌بان موفق شد.
-- لاگ واقعی شروع `npm start` از API لیارا در راه‌بان نمایش داده شد.
-- ناظر، بازیابی پاسخ HTTP را پس از سه نمونهٔ سالم ثبت کرد؛ اقدام اصلاحی ابری خودکار اجرا نشد.
-
-خروجی نمونه: <https://rahban-demo-1023-a7c9.liara.run>
-
-در استقرار بعدی، همین آدرس به خود پنل راه‌بان با ورود رمزدار اختصاص یافت. نسخهٔ محلی در <http://localhost:4310> و Grafana در <http://localhost:4311> نیز روی دستگاه کاربر هستند. طبق پنل، زیردامنهٔ آزمایشی لیارا از اولین استقرار هفت روز اعتبار دارد.
-
-## اصلاحات حاصل از آزمون واقعی
-
-۱. MIME آپلود multipart باید `application/gzip` باشد؛ ارسال Blob بدون نوع فایل با پاسخ 400 رد می‌شود.
-۲. payload نسخه مطابق CLI رسمی شامل `platformConfig` است.
-۳. اعلام READY می‌تواند قبل از آماده‌شدن مسیریاب HTTP باشد. راستی‌آزمایی اکنون برای گرم‌شدن، بازهٔ محدود در نظر می‌گیرد و سه پاسخ سالم متوالی می‌خواهد.
-۴. job نیازمند بررسی می‌تواند بدون انتشار یا ری‌استارت تازه، فقط از نظر سلامت دوباره بررسی شود.
-۵. بازیابی مشاهده‌شده با HTTP ثبت می‌شود و از ادعای «رفع علت توسط ایجنت» جداست.
-
-شانزده تست، بررسی TypeScript و build موفق‌اند. `npm audit` آسیب‌پذیری گزارش نکرد. گزارش بررسی runtime در `VALIDATION.json` و تست‌ها در `tests/` هستند.
-
-## دسترسی
-
-کلید API فقط با انقضای یک ساعت ساخته شد؛ زمان انقضای اعلام‌شده در payload آن، امروز ساعت ۱۳:۴۶ تهران است. مقدار کلید در فایل، سورس، بستهٔ تحویلی یا `.env` ذخیره نشده و پس از اتصال از حافظهٔ جلسهٔ کنترل مرورگر هم پاک شد. سرور محلی تا انقضا یا ری‌استارت از همان کلید استفاده می‌کند.
-
-مدل زبانی هنوز به ارائه‌دهنده متصل نشده؛ تحلیل جاری مبتنی بر قواعد است. دادهٔ CPU/RAM داشبورد فعلی مربوط به کنترل‌پلین راه‌بان است؛ متریک HTTP سرویس لیارا از بررسی‌های واقعی گرفته می‌شود.
-
-## انتشار خود پنل روی سرور
-
-- کد در مخزن خصوصی https://github.com/ashkanhfz/rahban پوش شد.
-- CI گیت‌هاب برای commit اولیه موفق شد: ۱۸ تست، TypeScript، build و audit وابستگی تولید.
-- بستهٔ استقرار فقط شامل server، dist، وابستگی‌ها و تنظیم hash رمز بود؛ API key و دیتابیس محلی منتقل نشدند.
-- دیسک `rahban-data` با اندازهٔ ۱GB از فضای ۵GB پلن موجود ساخته و به `/app/data` متصل شد.
-- نسخهٔ v2، Node 22 و پورت 4310 در پنل موفق شد؛ متغیر `PORT=3000` باقی‌ماندهٔ نمونه با `4310` هماهنگ شد.
-- نسخهٔ سرور تک‌اپراتوره است؛ توکن لیارا و مدل باید در همان پنل دوباره توسط اپراتور وارد شوند.
-- Grafana روی این سرویس منتشر نشده؛ نمودار و پایش HTTP داخلی قابل استفاده است.
-- نسخهٔ سورس روی `Desktop/Rahban` هم clone شد. رمز ورود فقط در فایل خصوصی `data/cloud-access.txt` محلی است.
-
-### تأیید نهایی نسخهٔ v5
-
-ورود از Edge و نمایش داشبورد واقعی تأیید شد. ورود با توکن فرم یک‌بارمصرف و کنترل دقیق Origin انجام می‌شود؛ درخواست پس‌زمینهٔ فرم، فرم قابل مشاهده را باطل نمی‌کند. کوکی اصلی اپراتور Secure/HttpOnly/SameSite است. API مهمان 401 و Origin خارجی یا mutation فاقد CSRF برابر 403 برگرداندند. پاسخ healthz سه بار 200 بود و داده‌های probe از قبلِ استقرار مجدد در دیسک باقی ماندند. حساب لیارا در نسخهٔ سرور هنوز متصل نیست؛ اپراتور باید توکن را در تنظیمات همین نسخه وارد کند.
+`node scripts/verify-runtime.js` checks only Rahban's own health. Its result is not evidence of a Liara deployment or model connection. The demo video should show the actual deployment outcome and relevant limitations.

@@ -1,16 +1,12 @@
-# مرزهای امنیتی
+# Security and access
 
-- در حالت پیش‌فرض دسترسی محلی است. برای انتشار اینترنتی، `PUBLIC_ORIGIN` دقیق HTTPS و scrypt hash رمز اپراتور اجباری است؛ تنظیم ناقص باعث توقف برنامه می‌شود.
-- در حالت عمومی، فرانت، API، گزارش‌ها و metrics پشت ورود اپراتورند. رمز با scrypt بررسی می‌شود؛ nonce ورود یک‌بارمصرف، محدودسازی تلاش، نشست ۸ساعتهٔ RAM و خروج با ابطال نشست وجود دارد. کوکی اپراتور `__Host-` و Secure/HttpOnly/SameSite است.
-- Host و Origin به مبدأ دقیق پیکربندی‌شده محدودند. CORS باز وجود ندارد. mutation API علاوه بر ورود نیازمند session و CSRF token است. `/healthz` تنها سلامت عمومی را نشان می‌دهد؛ sandbox داخلی فقط از loopback با Host محلی برای probe قابل دسترسی است.
-- عملیات حساس بدون approval یک‌بارمصرف و منقضی‌نشده اجرا نمی‌شود. پیشنهاد به حساب، تیم، محیط و پیکربندی اتصال مقید است. اجرای موازی روی یک هدف رد می‌شود.
-- API رسمی لیارا مقصد ثابت دارد. redirect درخواست دارای توکن مسدود است. خطای خام بالادست، environment values و کلیدها به UI برنمی‌گردند.
-- کلیدهای واردشده در UI فقط در RAM سرورند. `.env` اختیاری است و از Git/Docker context حذف می‌شود. credentials محلی Grafana در `data/` و Git-ignored هستند؛ دسترسی filesystem این دستگاه همچنان مهم است.
-- سورس و لاگ untrusted محسوب می‌شوند. کد پروژه روی دستگاه اجرا نمی‌شود؛ آرشیو استخراج نمی‌شود؛ symlink و مسیر مشکوک رد می‌شوند؛ برای ZIP حجم و تعداد محدود شده است.
-- نام‌های فایل شناخته‌شدهٔ اسرار حذف می‌شوند، اما کشف هر نوع secret در فایل دلخواه تضمین نشده است. پیش از انتشار ریپو باید secret scanning مستقل انجام شود.
-- مدل تنها advisor است. هیچ tool mutation یا دسترسی shell ندارد. ارسال شواهد فقط با رضایت ارائه‌دهندهٔ مشخص فعال می‌شود و جایگزین بازبینی حساسیت داده‌ها نیست.
-- probe فقط loopback آزمایشی یا hostname مشتق‌شده با پسوند `liara.run` را هدف می‌گیرد؛ redirect دنبال نمی‌شود. دامنهٔ دلخواه پشتیبانی نشده است.
-- audit با hash chain قابل بررسی است، اما در برابر کسی که امکان بازنویسی فایل دیتابیس و کل زنجیره را دارد محافظت رمزنگاری‌شدهٔ مستقل ندارد.
-- شروع مجدد برنامه job در حال اجرا را interrupted می‌کند؛ برای جلوگیری از تغییر تکراری وضعیت cloud باید دستی بررسی شود.
+- Access is local by default. Public hosting requires an exact HTTPS `PUBLIC_ORIGIN` and an operator password hash. Login uses scrypt, attempt limits, and an eight-hour session with Secure, HttpOnly, and SameSite cookies.
+- The API validates Host and Origin. Mutations require a session and CSRF token. Sensitive operations also require single-use approval of the exact target name.
+- Keys entered in the UI stay in server memory. `.env`, `data/`, and `hosting.private.json` are excluded from Git and the Docker build context. Private deployment packages contain a password hash. Do not publish `data/cloud-access.*`.
+- The Liara API destination is fixed, and credentialed requests do not follow redirects. Reports redact known secret patterns; this does not guarantee removal of every sensitive value.
+- User archives are neither executed nor extracted to disk. Suspicious paths, symlinks, and oversized input are rejected. Review source files for secrets before publication.
+- The model has no execution tools. Evidence sharing requires explicit consent. The model key and infrastructure token serve separate purposes.
+- HTTP checks target the local sandbox or a derived `liara.run` hostname. Redirects are not followed. `/healthz` exposes only basic application health.
+- Audit entries form a hash chain. Someone able to rewrite the whole database could also rewrite that chain. Restrict access to the data file and backups.
 
-نسخهٔ سرور، MVP تک‌اپراتوره با TLS لیارا است. برای تولید سازمانی: SSO/OIDC و RBAC، secret manager، محدودسازی egress، account scoping داده‌ها، rate limit جامع API، صف اجرای پایدار و backup مستقل لازم است. هش رمز در `hosting.private.json` داخل بستهٔ خصوصی استقرار یا متغیر محیطی قرار می‌گیرد؛ فایل خصوصی و `data/cloud-access.*` وارد Git نمی‌شوند. رمز خام فقط در فایل دسترسی محلی است.
+This is a single-operator MVP. Multi-user secret management, SSO, organizational RBAC, and independent backups are not implemented. Inspect the destination after an interrupted operation; Rahban does not blindly repeat cloud mutations.

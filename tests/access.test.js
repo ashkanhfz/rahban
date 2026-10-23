@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import {request} from 'node:http';
 import {installAccess,passwordHash} from '../server/access.js';
-test('public operator gate protects frontend, metrics and API; rejects forged login and origin; logout revokes access',async()=>{
+test('public operator gate protects frontend and API; rejects forged login and origin; logout revokes access',async()=>{
   const app=express();app.use(express.urlencoded({extended:false}));
   installAccess(app,{origin:'https://rahban.example',passwordHash:await passwordHash('test-only-password')});
-  app.get('/api/state',(req,res)=>res.json({private:true}));app.get('/metrics',(req,res)=>res.send('private metrics'));app.get('/healthz',(req,res)=>res.send('ok'));app.get('/',(req,res)=>res.send('private frontend'));
+  app.get('/api/state',(req,res)=>res.json({private:true}));app.get('/healthz',(req,res)=>res.send('ok'));app.get('/',(req,res)=>res.send('private frontend'));
   const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
   const base=`http://127.0.0.1:${server.address().port}`;
   const call=(path,options={})=>new Promise((resolve,reject)=>{
@@ -14,7 +14,7 @@ test('public operator gate protects frontend, metrics and API; rejects forged lo
     const req=request(base+path,{method:options.method||'GET',headers:{Host:'rahban.example',...(body?{'Content-Type':'application/x-www-form-urlencoded','Content-Length':Buffer.byteLength(body)}:{}),...options.headers}},res=>{let text='';res.on('data',d=>text+=d);res.on('end',()=>resolve({status:res.statusCode,headers:{get:n=>res.headers[n.toLowerCase()],getSetCookie:()=>res.headers['set-cookie']||[]},text:async()=>text}));});req.on('error',reject);req.end(body);
   });
   try{
-    assert.equal((await call('/')).status,303);assert.equal((await call('/api/state')).status,401);assert.equal((await call('/metrics')).status,401);assert.equal((await call('/healthz')).status,200);
+    assert.equal((await call('/')).status,303);assert.equal((await call('/api/state')).status,401);assert.equal((await call('/healthz')).status,200);
     assert.equal((await call('/auth/login',{headers:{Origin:'https://attacker.example'}})).status,403);
     assert.equal((await call('/auth/login',{method:'POST',body:new URLSearchParams({username:'rahban',password:'test-only-password'})})).status,403);
     const form=await call('/auth/login'),html=await form.text(),nonce=html.match(/name="nonce" value="([a-f0-9]+)"/)[1];

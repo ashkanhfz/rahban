@@ -1,9 +1,9 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 COPY . .
-RUN npm run check && npm run build && npm prune --omit=dev
+RUN npm run check && npm run build && npm prune --omit=dev --no-audit --no-fund
 
 FROM node:22-alpine
 WORKDIR /app

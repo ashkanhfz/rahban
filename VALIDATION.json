@@ -1,0 +1,62 @@
+{
+  "checkedAt": "2026-10-23T13:37:46.047Z",
+  "scope": "English UI and Docker deployment revision; local runtime and simulated provider tests",
+  "status": "passed",
+  "checks": [
+    {
+      "name": "TypeScript",
+      "command": "npm run check",
+      "passed": true
+    },
+    {
+      "name": "Unit and HTTP integration tests",
+      "command": "npm test",
+      "passed": true,
+      "tests": 28
+    },
+    {
+      "name": "Production frontend",
+      "command": "npm run build",
+      "passed": true
+    },
+    {
+      "name": "Production dependency audit",
+      "command": "npm audit --omit=dev --audit-level=high",
+      "passed": true,
+      "vulnerabilities": 0
+    },
+    {
+      "name": "Docker image build and container health",
+      "command": "docker compose build app; docker compose up -d --no-build --wait app",
+      "passed": true,
+      "origin": "http://localhost:4310"
+    },
+    {
+      "name": "Browser smoke test in Chrome",
+      "passed": true,
+      "checks": [
+        "English LTR initial deployment page",
+        "Sample Docker project detected; optional settings default to empty",
+        "Actual sandbox HTTP 503, diagnosis, approval, recovery and three HTTP checks",
+        "English incident report download",
+        "360px mobile layout without horizontal overflow",
+        "No browser JavaScript errors"
+      ]
+    },
+    {
+      "name": "First Docker deployment with simulated Liara responses",
+      "passed": true,
+      "details": "Create approval, immutable settings, Docker release payload, uncertain polling, manual recheck, and saved health settings."
+    },
+    {
+      "name": "New-service deployment flow in Chrome with simulated provider state",
+      "passed": true,
+      "details": "Create service, review project, approve deployment, and show the resulting website link."
+    }
+  ],
+  "notRun": [
+    "Current revision deployed to Liara",
+    "Paid model request",
+    "Windows start/stop scripts"
+  ]
+}

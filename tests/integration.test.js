@@ -24,8 +24,15 @@ test('HTTP workflow: fail -> diagnose -> gate -> restore -> three passing checks
     const replay=await call('/approvals/'+approval.body.id+'/execute','POST',{confirmation:'sandbox-store'});assert.equal(replay.status,400);
     let state;for(let n=0;n<30;n++){state=(await call('/state')).body;if(state.jobs.find(j=>j.id===executed.body.id)?.status==='succeeded')break;await new Promise(r=>setTimeout(r,250));}
     assert.equal(state.jobs.find(j=>j.id===executed.body.id).status,'succeeded');assert.equal(state.incidents.find(i=>i.id===incident.body.id).status,'resolved');
-    const metric=await fetch(base+'/metrics').then(r=>r.text());assert.match(metric,/rahban_operations_total\{type="restore-demo",result="succeeded"\} 1/);
+    assert.ok(state.jobs.find(j=>j.id===executed.body.id).steps.every(step=>step.status==='done'));
     const source=await call('/sources/sample','POST',{});assert.equal(source.body.ready,true);
+    assert.equal(source.body.platform,'docker');
+    const preview=await call('/deployment/preview','POST',{sourceId:source.body.id,settings:{port:null,healthPath:null,buildCache:false}});
+    assert.equal(preview.status,200);assert.equal(preview.body.ready,true);
+    assert.deepEqual(preview.body.settings,{port:3000,healthPath:'/',healthTimeoutMs:5000,buildCache:false});
+    const invalid=await call('/deployment/preview','POST',{sourceId:source.body.id,settings:{healthPath:'//other-host'}});
+    assert.equal(invalid.status,400);
+    assert.equal((await call('/state')).body.jobs.length,state.jobs.length);
     const badLive=await call('/proposals','POST',{type:'restart',target:'sandbox-store'});assert.equal(badLive.status,400);
   }finally{server.kill();await new Promise(r=>server.once('close',r));rmSync(dir,{recursive:true,force:true});}
 });

@@ -10,7 +10,7 @@ if(!origin||!destination)throw new Error('Usage: node scripts/package-cloud.js h
 const privateFile=join(root,'data','cloud-access.json');mkdirSync(join(root,'data'),{recursive:true});
 let access=existsSync(privateFile)?JSON.parse(readFileSync(privateFile,'utf8')):null;
 if(!access){const password=randomBytes(24).toString('base64url');access={username:'rahban',password,passwordHash:await passwordHash(password)};writeFileSync(privateFile,JSON.stringify(access,null,2));}
-writeFileSync(join(root,'data','cloud-access.txt'),`راه‌بان — ورود به نسخهٔ سرور\n\n${origin}\n\nنام کاربری: ${access.username}\nرمز ورود: ${access.password}\n\nاین فایل خصوصی است؛ در ریپو یا بستهٔ سورس منتشر نکنید.\n`);
+writeFileSync(join(root,'data','cloud-access.txt'),`Rahban — hosted dashboard access\n\n${origin}\n\nUsername: ${access.username}\nPassword: ${access.password}\n\nThis file is private. Do not include it in the repository or source package.\n`);
 const zip=new AdmZip();
 function addTree(directory){for(const file of readdirSync(join(root,directory),{withFileTypes:true})){const name=join(directory,file.name);if(file.isDirectory())addTree(name);else zip.addFile(relative(root,join(root,name)).replaceAll('\\','/'),readFileSync(join(root,name)));}}
 addTree('server');addTree('dist');
