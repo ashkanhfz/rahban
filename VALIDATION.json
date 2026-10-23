@@ -1,6 +1,6 @@
 {
-  "checkedAt": "2026-10-23T15:44:14.583357+00:00",
-  "scope": "Liara deployment, app management, scheduled checks and GitHub updates; local runtime and simulated provider validation",
+  "checkedAt": "2026-10-23T16:21:53.248099+00:00",
+  "scope": "Browser navigation, deployment draft recovery and actionable operation failures",
   "origin": "http://localhost:4310",
   "status": "passed",
   "checks": [
@@ -13,45 +13,34 @@
       "name": "Unit and HTTP integration tests",
       "command": "npm test",
       "passed": true,
-      "tests": 98
+      "tests": 103,
+      "details": "Includes source/job restoration, account isolation, failure stages, provider-message redaction, HTTP health failures, fresh approval on retry and no mutation replay."
     },
     {
-      "name": "Final management and account isolation regressions",
-      "command": "node --test tests/management-workflow.test.js tests/service-workflow.test.js",
+      "name": "Chrome recovery and navigation with simulated providers",
       "passed": true,
-      "tests": 4,
-      "details": "Includes uncertainty beyond 100 history records, explicit approval, full environment preservation and no secret values in state or SQLite/WAL."
+      "scenarios": 16,
+      "details": "Drafts, source restore, direct job URLs, Settings return, Back/Forward, review regeneration, missing sources, late async responses and secret exclusion."
+    },
+    {
+      "name": "Chrome failure screens with simulated providers",
+      "passed": true,
+      "scenarios": 5,
+      "details": "Legacy HTTP 409, visible provider error and failed stage, edit/review retry, uncertain-outcome verification, 320px and 390px layouts; no browser errors or provider writes."
     },
     {
       "name": "Docker image and running app",
       "passed": true,
-      "details": "Built from cached dependencies, restarted without active operations, preserved instance identity and returned HTTP 200 from /healthz."
+      "details": "Built from cached dependencies; restarted with no running jobs. Existing account/team connection restored. Health endpoint returns HTTP 200 and current frontend assets match the local build."
     },
     {
-      "name": "Chrome workflows with simulated providers",
+      "name": "Running app recovery in Chrome and HTTP",
       "passed": true,
-      "checks": [
-        "GitHub import, default branch, plan review, app creation, release and three health checks",
-        "Retained drafts, retry and failed network selection",
-        "Raw resource metrics, scheduled checks, domain records and incident output",
-        "Environment value masking, app control proposals, deletion approval and history removal",
-        "GitHub update authorization and uncertain operation verification",
-        "360px and 390px layouts without overflow; no JavaScript errors"
-      ]
-    },
-    {
-      "name": "Running Docker app in Chrome",
-      "passed": true,
-      "checks": [
-        "Deployments home",
-        "Settings",
-        "Mobile layout",
-        "No JavaScript errors"
-      ]
+      "details": "Actual recorded test1 failure is visible; direct job URL survives refresh and Settings return. Saved source metadata and old-job endpoints return successfully. No browser errors."
     }
   ],
   "notRun": [
-    "Current revision deployed to a live Liara account",
+    "New live Liara app creation or deployment; provider writes were simulated",
     "Paid model request",
     "Windows start/stop scripts"
   ]

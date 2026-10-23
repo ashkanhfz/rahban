@@ -73,7 +73,7 @@ async function networkOptions(adapter=liara){
 async function selectedNetwork(adapter,requested){
   const {networks}=await networkOptions(adapter);
   if(networks===null){if(requested)throw httpError(409,'NETWORK_UNVERIFIED','The selected network cannot be verified. Refresh the available plans.');return undefined;}
-  if(!networks.length)throw httpError(409,'NETWORK_REQUIRED','Create a private network in Liara, then refresh the available plans.');
+  if(!networks.length)throw httpError(409,'NETWORK_REQUIRED','Liara returned no private networks for this account or team. Check Settings and refresh networks. Create a network in Liara only if this account has none.');
   const selected=requested?networks.find(network=>network._id===requested):networks.length===1?networks[0]:null;
   if(!selected?._id)throw httpError(409,'NETWORK_REQUIRED','Select an existing private network from this Liara account.');
   return selected._id;
@@ -83,7 +83,7 @@ const portSchema=deploySettings.shape.port;
 const approvals=()=>store.db.prepare('SELECT body,status FROM approvals ORDER BY rowid DESC LIMIT 100').all().map(r=>({...JSON.parse(r.body),status:r.status==='pending'&&JSON.parse(r.body).expires<Date.now()?'expired':r.status}));
 const api=(fn)=>(req,res,next)=>Promise.resolve(fn(req,res)).catch(next);
 function requireMode(value){if(mode!==value)throw new Error('This action is unavailable in the selected environment.');}
-function publicConfig(){return {connected:!!config.token,team:config.team,llmConfigured:!!(config.llmKey&&config.llmBase&&config.llmModel),llmBase:config.llmBase,llmModel:config.llmModel,shareEvidence:config.shareEvidence};}
+function publicConfig(){return {connected:!!config.token,connectionId:config.revision,team:config.team,llmConfigured:!!(config.llmKey&&config.llmBase&&config.llmModel),llmBase:config.llmBase,llmModel:config.llmModel,shareEvidence:config.shareEvidence};}
 
 // Bind local sessions to exact browser origins. No wildcard CORS and no credential in URLs.
 app.use('/api',(req,res,next)=>{
@@ -142,6 +142,14 @@ const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:10*1024*102
 app.post('/api/sources/upload',upload.single('file'),api(async(req,res)=>{if(!req.file)throw new Error('Choose a ZIP file.');res.json(await saveSource(unpackZip(req.file.buffer),safe(req.file.originalname)));}));
 app.post('/api/sources/github',api(async(req,res)=>{
   const github=await resolveGitHubSource(req.body.url,req.body.branch||undefined);res.json(await importGitHub(github));
+}));
+app.get('/api/sources/:id',api(async(req,res)=>{
+  const id=z.string().uuid().parse(req.params.id),source=store.get('source',id);
+  if(!source)throw httpError(404,'SOURCE_NOT_FOUND','The saved project is unavailable. Import it again.');
+  let bytes;try{bytes=readFileSync(join(data,'sources',`${id}.tar.gz`));}
+  catch{throw httpError(404,'SOURCE_ARCHIVE_MISSING','The saved project archive is unavailable. Import it again.');}
+  if(digest(bytes)!==source.sha256)throw httpError(409,'SOURCE_CHANGED','The saved archive changed. Import the project again.');
+  res.json(source);
 }));
 
 async function validateDeployment(target,source,adapter=liara){
@@ -222,7 +230,39 @@ function executeApproval(id,confirmation){
 app.post('/api/approvals/:id/execute',api(async(req,res)=>res.status(202).json(executeApproval(req.params.id,req.body.confirmation))));
 function createJob(action){return store.put('job',{mode:action.mode,accountScope:accountScope(),settings:action.payload.settings,type:action.type,target:action.target,title:action.title||'Deploy to Liara',status:'running',steps:[{title:'Approval recorded',status:'done'}],approvalId:action.id,rahban:runtime.snapshot().signature,bootId:runtime.snapshot().bootId});}
 function jobStep(job,title,status='done'){job.steps.push({title,status,at:new Date().toISOString()});store.put('job',job);}
-async function verifyService(id,count=3,environment=mode,settings,scope=accountScope()){return (await waitForHealthy(()=>probe(id,environment,settings,scope),{required:count,attempts:environment==='live'?15:3,interval:environment==='live'?2000:1200})).healthy;}
+function jobStage(job,stage){job.stage=stage;store.put('job',job);}
+function operationMessage(error,job){
+  if(job.type==='update-env'&&(error.providerMessage||error.code?.startsWith('LIARA_')))return `Liara could not confirm the environment change. Review the configuration in Liara and verify this operation before retrying.${error.status?' (HTTP '+error.status+')':''}`;
+  return safe(error.message);
+}
+function failureDetails(error,job){
+  let nextStep=job.status==='needs_attention'?'Verify the existing operation and check the Liara console before requesting another action.':({
+    'Plan and network validation':'Refresh plans and networks, then review a new creation proposal.',
+    'App creation':'Review the app name, plan and network before requesting a new approval.',
+    'Project validation':'Correct the project or destination configuration, then review a new deployment.',
+    'Source upload':'Check the project archive and connection, then review a new deployment.',
+    'Release creation':'Review the release settings and Liara console before preparing another deployment.',
+    'Release build':'Open this release and its build logs in the Liara console. Detailed build output is unavailable here; fix the reported error before reviewing a new deployment.',
+    'Release health':'Inspect app runtime logs, the start command and health configuration in Liara. Fix the cause before reviewing a new deployment.',
+    'Environment validation':'Refresh the app configuration and enter the changes again.',
+  }[job.stage]||'Refresh the app and review its configuration before requesting another approval.');
+  if(error.status===401)nextStep='Reconnect in Settings with a valid Liara API token.';
+  else if(error.status===402)nextStep='Top up the Liara account, then review a new proposal.';
+  else if(error.status===403)nextStep='Check token permissions and the selected team in Settings.';
+  else if(error.status===409&&job.stage==='App creation')nextStep='Choose a different app name, then review and approve a new creation request.';
+  return {code:error.code||(error.releaseFailed?'RELEASE_FAILED':'OPERATION_FAILED'),stage:job.stage||'Operation',nextStep,...(error.status?{status:error.status}:{}),...(error.providerMessage&&job.type!=='update-env'?{providerMessage:safe(error.providerMessage).replace(/[\u0000-\u001f\u007f]/g,' ').slice(0,500)}:{})};
+}
+function releaseFailure(state,job){
+  if(state==='UNHEALTHY')jobStage(job,'Release health');
+  return Object.assign(new Error(state==='UNHEALTHY'?'Liara marked the release UNHEALTHY. Detailed runtime error evidence is unavailable here.':'Liara marked the release FAILED. Detailed build output is unavailable here.'),{releaseFailed:true,code:state==='UNHEALTHY'?'RELEASE_UNHEALTHY':'RELEASE_FAILED'});
+}
+function failedHealth(job,result){
+  const failed=result.results.filter(item=>!item?.ok),last=failed.at(-1),path=job.settings?.healthPath||'/';
+  const detail=last?.code?`HTTP ${last.code} at ${path}.${last.code>=300&&last.code<400?' Redirects are not followed.':''}`:last?'No HTTP response was received. The connection may have failed or timed out.':'No supported public health endpoint was available.';
+  job.failure={code:'HEALTH_UNCONFIRMED',stage:'HTTP health verification',nextStep:'Inspect the app logs, listening port and health path. Correct the cause, then verify this operation again.',...(last?.code?{status:last.code}:{})};
+  return `The action was submitted, but three consecutive healthy responses were not confirmed. ${detail}`;
+}
+async function verifyService(id,count=3,environment=mode,settings,scope=accountScope()){return waitForHealthy(()=>probe(id,environment,settings,scope),{required:count,attempts:environment==='live'?15:3,interval:environment==='live'?2000:1200});}
 function rememberDeployment(target,environment,settings,metadata={}){
   const service=store.get('service',target,environment);
   if(service&&(!metadata.accountScope||service.accountScope===metadata.accountScope))store.put('service',{...service,settings,state:'running',rahban:runtime.snapshot().signature,...metadata});
@@ -261,46 +301,55 @@ async function runOperation(action,job,adapter){
   try{
     const p=action.payload;
     if(action.type==='restore-demo'){
+      jobStage(job,'Sandbox recovery');
       demoFault=null;demoLogs.push({at:Date.now(),line:'INFO configuration restored to healthy baseline'});jobStep(job,'Sandbox configuration restored');
     }else if(['delete-app','update-env','start-app','stop-app','restart'].includes(action.type)){
-      const requested=()=>{job.mutationRequested=true;store.put('job',job);};
+      const mutationStage={'delete-app':'App deletion','update-env':'Environment update','start-app':'App start','stop-app':'App stop',restart:'App restart'}[action.type];
+      jobStage(job,action.type==='update-env'?'Environment validation':mutationStage);
+      const requested=()=>{job.mutationRequested=true;jobStage(job,mutationStage);};
       if(action.type==='update-env')await environmentChanges.apply(adapter,action.target,p,requested);
       else{requested();await adapter[{'delete-app':'delete','start-app':'start','stop-app':'stop','restart':'restart'}[action.type]](action.target);}
       job.providerAccepted=true;jobStep(job,'Liara accepted the request');
       if(action.type==='restart')await new Promise(r=>setTimeout(r,4000));
-      else await confirmManagement(action,job,adapter);
+      else{jobStage(job,'Provider state verification');await confirmManagement(action,job,adapter);}
       if(action.type==='delete-app'||action.type==='stop-app'){
         job.status='succeeded';job.message=action.type==='delete-app'?'App deleted. Scheduled checks and GitHub updates are disabled.':'App stopped. Scheduled checks and GitHub updates are paused.';
       }
     }
     else if(action.type==='create-app'){
+      jobStage(job,'Plan and network validation');
       const current=await adapter.plans();const plan=current.projects?.[p.planID],bundle=current.projectBundlePlans?.[p.planID]?.[p.bundlePlanID];
       const catalogPlan=planCatalog(current).find(plan=>plan.planID===p.planID),catalogBundle=catalogPlan?.bundles.find(b=>b.bundlePlanID===p.bundlePlanID);
       const currentCost=catalogPlan?.selectable&&catalogBundle?.monthlyPrice!=null?catalogPlan.monthlyBase+catalogBundle.monthlyPrice:null;
       if(!plan?.available||!bundle?.available||currentCost!==action.cost.monthlyEstimate)throw new Error('Plan availability or price changed. Prepare a new proposal.');
       if(await selectedNetwork(adapter,p.network)!==p.network)throw httpError(409,'NETWORK_CHANGED','Available networks changed. Prepare a new proposal.');
-      const {name,platform,planID,bundlePlanID,network}=p;job.createRequested=true;store.put('job',job);
+      jobStep(job,'Approved plan and network verified');
+      const {name,platform,planID,bundlePlanID,network}=p;job.createRequested=true;jobStage(job,'App creation');
       await adapter.create({name,platform,planID,bundlePlanID,...(network?{network}:{})});if(job.accountScope===accountScope())store.put('service',{id:action.target,name:action.target,mode:'live',accountScope:job.accountScope,platform:p.platform,domain:`${action.target}.liara.run`,state:'created',provider:'Liara'});jobStep(job,'Liara confirmed service creation');job.status='succeeded';job.message='Service created. You can deploy the project now.';
     }else if(action.type==='deploy'){
+      jobStage(job,'Project validation');
       const metadata=store.get('source',p.sourceId);await validateDeployment(action.target,metadata,adapter);
       job.github=metadata.github||null;job.commit=job.github?.commit||null;
       const source=readFileSync(join(data,'sources',`${p.sourceId}.tar.gz`));if(digest(source)!==p.sha256)throw new Error('Source checksum changed. Deployment stopped.');
       jobStep(job,'Approved source checksum verified');
-      const release=await adapter.deploy(action.target,source,p.platform,p.port,title=>{job.releaseRequested=true;jobStep(job,title);},{...p.settings,attribution:`${job.rahban} job:${job.id}${job.commit?' commit:'+job.commit:''}`});job.releaseId=release.releaseID;if(!job.releaseId)throw new Error('Liara returned no release ID. Check the Liara console.');jobStep(job,'Release created in Liara');
-      let ready=false;for(let n=0;n<120;n++){const r=await adapter.release(job.releaseId);const state=r.release?.state;if(['FAILED','UNHEALTHY'].includes(state))throw Object.assign(new Error(`Liara release is ${state}. Check the logs.`),{releaseFailed:true});if(state==='READY'){ready=true;break;}await new Promise(r=>setTimeout(r,5000));}
+      jobStage(job,'Source upload');
+      const release=await adapter.deploy(action.target,source,p.platform,p.port,title=>{job.releaseRequested=true;jobStep(job,title);jobStage(job,'Release creation');},{...p.settings,attribution:`${job.rahban} job:${job.id}${job.commit?' commit:'+job.commit:''}`});job.releaseId=release.releaseID;if(!job.releaseId)throw new Error('Liara returned no release ID. Check the Liara console.');jobStep(job,'Release created in Liara');
+      jobStage(job,'Release build');
+      let ready=false;for(let n=0;n<120;n++){const r=await adapter.release(job.releaseId);const state=r.release?.state;if(['FAILED','UNHEALTHY'].includes(state))throw releaseFailure(state,job);if(state==='READY'){ready=true;break;}await new Promise(r=>setTimeout(r,5000));}
       if(!ready)throw new Error('Release polling timed out. Check its status before retrying.');job.releaseReady=true;jobStep(job,'Liara release is READY');
       rememberDeployment(action.target,action.mode,p.settings,{github:metadata.github||null,lastJobId:job.id,accountScope:job.accountScope});
     }
     if(!['create-app','delete-app','stop-app'].includes(action.type)){
-      const healthy=await verifyService(action.target,3,action.mode,p.settings,job.accountScope);jobStep(job,'Three HTTP health checks',healthy?'done':'failed');job.status=healthy?'succeeded':'needs_attention';job.message=healthy?'Completed. All three health checks passed.':'Action submitted, but HTTP health is not confirmed.';
+      jobStage(job,'HTTP health verification');
+      const result=await verifyService(action.target,3,action.mode,p.settings,job.accountScope),{healthy}=result;jobStep(job,'Three HTTP health checks',healthy?'done':'failed');job.status=healthy?'succeeded':'needs_attention';job.message=healthy?'Completed. All three health checks passed.':failedHealth(job,result);
       if(healthy)for(const incident of store.list('incident').filter(i=>i.target===action.target&&i.status==='open'&&i.mode===action.mode&&(action.mode!=='live'||i.accountScope===job.accountScope))){store.put('incident',{...incident,status:'resolved',resolved:new Date().toISOString(),resolution:job.message,jobId:job.id});}
     }
     store.put('job',job);store.db.prepare("UPDATE approvals SET status='completed' WHERE id=?").run(action.id);store.audit('operation.finished',{id:job.id,target:action.target,accountScope:job.accountScope,status:job.status,rahban:job.rahban,commit:job.commit});
   }catch(error){
     const uncertainCreate=job.createRequested&&(!error.status||error.status>=500);
     const uncertainMutation=job.mutationRequested&&(job.providerAccepted||!error.status||error.status>=500);
-    job.status=uncertainCreate||uncertainMutation||(job.releaseId||job.releaseRequested)&&!error.releaseFailed?'needs_attention':'failed';job.message=safe(error.message);
-    job.releaseFailed=!!error.releaseFailed;job.failure={code:error.code||(error.releaseFailed?'RELEASE_FAILED':'OPERATION_FAILED'),...(error.status?{status:error.status}:{})};
+    job.status=uncertainCreate||uncertainMutation||(job.releaseId||job.releaseRequested)&&!error.releaseFailed?'needs_attention':'failed';job.message=operationMessage(error,job);
+    job.releaseFailed=!!error.releaseFailed;job.failure=failureDetails(error,job);jobStep(job,job.failure.stage,'failed');
     store.put('job',job);store.db.prepare('UPDATE approvals SET status=? WHERE id=?').run(job.status==='failed'?'failed':'completed',action.id);
     store.audit('operation.'+job.status,{id:job.id,target:action.target,accountScope:job.accountScope,message:job.message});
   }
@@ -349,6 +398,11 @@ async function probe(id,environment=mode,approvedSettings,scope=accountScope()){
   return row;
 }
 app.post('/api/probe/:id',api(async(req,res)=>{const service=store.get('service',req.params.id,mode);if(!service||service.mode!==mode)throw new Error('Service not found.');res.json(await probe(service.id));}));
+app.get('/api/jobs/:id',api(async(req,res)=>{
+  const job=store.get('job',req.params.id);
+  if(!job||job.hidden||job.mode!==mode||mode==='live'&&job.accountScope!==accountScope())throw httpError(404,'JOB_NOT_FOUND','Operation not found in this account and environment.');
+  res.json(job);
+}));
 app.get('/api/jobs/:id/retry',api(async(req,res)=>{
   const job=store.get('job',req.params.id);
   if(!job||job.mode!==mode)throw httpError(404,'JOB_NOT_FOUND','Operation not found in this environment.');
@@ -371,36 +425,42 @@ app.post('/api/jobs/:id/verify',api(async(req,res)=>{
   if(!job||job.mode!==mode)throw httpError(404,'JOB_NOT_FOUND','Operation not found in this environment.');
   const action=jobApproval(job),scope=accountScope(),credentials={token:config.token,team:config.team},adapter=new Liara(()=>credentials);
   if(!(job.status==='needs_attention'||(job.status==='interrupted'&&(job.releaseId||job.releaseRequested||job.createRequested||job.mutationRequested))))throw httpError(409,'VERIFICATION_NOT_REQUIRED','This operation is not awaiting verification.');
+  try{
   if(job.type==='create-app'){
+    jobStage(job,'App creation verification');
     const apps=await adapter.apps(),found=apps.find(project=>(project.project_id||project.name)===job.target);
     if(scope!==accountScope())throw httpError(409,'RETRY_CONTEXT_CHANGED','The connection changed during verification.');
     if(!found)throw httpError(409,'CREATE_UNCONFIRMED','Service creation is still unconfirmed. Check Liara before preparing another creation request.');
     store.put('service',{id:job.target,name:job.target,mode:job.mode,accountScope:scope,platform:found.type||found.platform||action.payload.platform,domain:`${job.target}.liara.run`,state:'created',provider:'Liara'});
-    job.status='succeeded';job.message='Liara confirms that this service exists. Select it as your deployment destination.';jobStep(job,'Service existence verified in Liara');res.json(job);return;
+    job.status='succeeded';delete job.failure;job.message='Liara confirms that this service exists. Select it as your deployment destination.';jobStep(job,'Service existence verified in Liara');res.json(job);return;
   }
   if(['delete-app','update-env','start-app','stop-app'].includes(job.type)){
+    jobStage(job,'Provider state verification');
     await confirmManagement(action,job,adapter);
     if(scope!==accountScope())throw httpError(409,'RETRY_CONTEXT_CHANGED','The connection changed during verification.');
     if(job.type==='delete-app'||job.type==='stop-app'){
-      job.status='succeeded';job.message=job.type==='delete-app'?'App deletion verified in Liara.':'App stop verified in Liara.';
+      job.status='succeeded';delete job.failure;job.message=job.type==='delete-app'?'App deletion verified in Liara.':'App stop verified in Liara.';
       store.put('job',job);store.audit('operation.verified',{id:job.id,target:job.target,type:job.type});res.json(job);return;
     }
   }
   if(job.type==='deploy'&&!job.releaseId)throw new Error('No release ID was received. Review the release in Liara before preparing another manual deployment. HTTP checks alone cannot confirm this release.');
   if(job.releaseId){
+    jobStage(job,'Release build');
     const release=await adapter.release(job.releaseId),state=release.release?.state;
     if(scope!==accountScope())throw httpError(409,'RETRY_CONTEXT_CHANGED','The connection changed during verification.');
-    if(['FAILED','UNHEALTHY'].includes(state)){job.status='failed';job.releaseFailed=true;job.failure={code:'RELEASE_FAILED'};job.message=`Liara confirms release ${state}. You can edit the saved deployment and request a new approval.`;jobStep(job,'Release failure verified in Liara','failed');res.json(job);return;}
+    if(['FAILED','UNHEALTHY'].includes(state)){const error=releaseFailure(state,job);job.status='failed';job.releaseFailed=true;job.failure=failureDetails(error,job);job.message=error.message;jobStep(job,'Release failure verified in Liara','failed');res.json(job);return;}
     if(state!=='READY')throw httpError(409,'RELEASE_NOT_READY','Release is not READY. Check its status in Liara.');
     job.releaseReady=true;
   }
   if(job.type==='deploy')rememberDeployment(job.target,job.mode,job.settings,{github:job.github||null,lastJobId:job.id,accountScope:scope});
-  const healthy=await verifyService(job.target,3,job.mode,job.settings,scope);jobStep(job,'Recheck: three consecutive healthy responses',healthy?'done':'failed');
+  jobStage(job,'HTTP health verification');
+  const result=await verifyService(job.target,3,job.mode,job.settings,scope),{healthy}=result;jobStep(job,'Recheck: three consecutive healthy responses',healthy?'done':'failed');
   if(job.type==='restart'&&healthy)job.providerConfirmed=true;
-  job.status=healthy?'succeeded':'needs_attention';job.message=healthy?'Operation verified with three consecutive healthy responses.':'Service health is not confirmed yet.';
+  job.status=healthy?'succeeded':'needs_attention';if(healthy)delete job.failure;job.message=healthy?'Operation verified with three consecutive healthy responses.':failedHealth(job,result);
   store.put('job',job);store.audit('operation.health_verified',{id:job.id,target:job.target,healthy});
   if(healthy)for(const i of store.list('incident').filter(i=>i.mode===job.mode&&i.target===job.target&&i.status==='open'&&(job.mode!=='live'||i.accountScope===scope)))store.put('incident',{...i,status:'resolved',resolved:new Date().toISOString(),resolution:job.message,jobId:job.id});
   res.json(job);
+  }catch(error){job.message=operationMessage(error,job);job.failure=failureDetails(error,job);jobStep(job,job.failure.stage,'failed');if(job.type==='update-env'){error.message=job.message;delete error.providerMessage;}throw error;}
 }));
 installManagement(app,{store,api,getMode:()=>mode,getScope:accountScope,connected:()=>!!config.token,getAdapter:()=>{const credentials={...config};return new Liara(()=>credentials);},safe});
 const serviceTools=installServiceTools(app,{store,api,liara,getMode:()=>mode,getScope:accountScope,connected:()=>!!config.token,probe,investigate,safe,runtime});

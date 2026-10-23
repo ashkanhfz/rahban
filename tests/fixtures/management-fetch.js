@@ -10,10 +10,10 @@ globalThis.fetch=async(input,init={})=>{
     const method=init.method||'GET',body=typeof init.body==='string'?JSON.parse(init.body):null;
     record({path:url.pathname,method,body,team:url.searchParams.get('teamID')});
     if(method==='GET'&&url.pathname==='/v1/projects')return Response.json({projects:state.exists?[{project_id:'management-test',name:'management-test',type:'docker',status:state.scale===0?'STOPPED':'RUNNING'}]:[]});
-    if(method==='GET'&&url.pathname==='/v1/projects/management-test')return state.exists?Response.json({project:{type:'docker',status:state.scale===0?'STOPPED':'RUNNING',state:state.scale===0?'STOPPED':'RUNNING',scale:state.scale,envs:state.envs,disks:[]}}):Response.json({},{status:404});
+    if(method==='GET'&&url.pathname==='/v1/projects/management-test')return state.envReadError?Response.json({message:'Invalid values: '+state.envs.map(item=>item.value).join(', ')},{status:400}):state.exists?Response.json({project:{type:'docker',status:state.scale===0?'STOPPED':'RUNNING',state:state.scale===0?'STOPPED':'RUNNING',scale:state.scale,envs:state.envs,disks:[]}}):Response.json({},{status:404});
     if(method==='POST'&&url.pathname==='/v1/projects/update-envs'){
       if(body.project!=='management-test'||!state.exists)throw new Error('Unexpected environment update target');
-      state.envs=body.variables;save();return Response.json({});
+      state.envs=body.variables;if(state.afterEnvUpdateError)state.envReadError=true;save();return Response.json({});
     }
     if(method==='POST'&&url.pathname==='/v1/projects/management-test/actions/scale'){
       if(![0,1].includes(body.scale))throw new Error('Invalid fixture scale');

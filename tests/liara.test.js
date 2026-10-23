@@ -64,7 +64,7 @@ test('transport retries are bounded and writes report uncertainty without replay
 });
 test('validation messages redact credentials and list APIs reject malformed responses',async()=>{
   const invalid=new Liara(()=>({token:'private-token'}),async()=>Response.json({message:['network is required','token=private-token']},{status:400}));
-  await assert.rejects(invalid.create({name:'app'}),error=>error.message.includes('network is required')&&!error.message.includes('private-token'));
+  await assert.rejects(invalid.create({name:'app'}),error=>error.message.includes('network is required')&&!error.message.includes('private-token')&&error.providerMessage.includes('network is required')&&!error.providerMessage.includes('private-token'));
   const malformed=new Liara(()=>({token:'x'}),async()=>Response.json({}));
   await assert.rejects(malformed.apps(),error=>error.code==='LIARA_INVALID_RESPONSE');
   await assert.rejects(malformed.networks(),error=>error.code==='LIARA_INVALID_RESPONSE');
@@ -111,4 +111,23 @@ test('start and stop submit the documented scale values without claiming readine
   const calls=[];const client=new Liara(()=>({token:'x'}),async(url,init)=>{calls.push({url,init});return new Response(null,{status:200});});
   assert.deepEqual(await client.start('test-app'),{});assert.deepEqual(await client.stop('test-app'),{});
   assert.deepEqual(calls.map(call=>[call.url.pathname,call.init.method,JSON.parse(call.init.body)]),[['/v1/projects/test-app/actions/scale','POST',{scale:1}],['/v1/projects/test-app/actions/scale','POST',{scale:0}]]);
+});
+test('provider details whitelist one string, redact credentials and remove controls without dumping payloads',async()=>{
+  const details=[{message:'The app name is already registered'}, {error:{message:'Build settings are invalid'}}, {error:'Plan is unavailable'}, {data:{message:'Network was not found'}}];
+  for(const detail of details){
+    const client=new Liara(()=>({token:'fixture-private-token'}),async()=>Response.json({...detail,debug:{secret:'do-not-dump-payload'}},{status:409}));
+    await assert.rejects(client.create({name:'test'}),error=>typeof error.providerMessage==='string'&&!JSON.stringify(error).includes('do-not-dump-payload')&&error.status===409);
+  }
+  const client=new Liara(()=>({token:'fixture-private-token'}),async()=>Response.json({message:'Rejected\n\u001b\u202e token=fixture-private-token; password=hunter-secret; '+ 'a'.repeat(700),error:{message:'ignored-secondary-message'}},{status:400}));
+  await assert.rejects(client.create({name:'test'}),error=>error.providerMessage.length<=500&&!/[\u0000-\u001f\u202e]/.test(error.providerMessage)&&!error.providerMessage.includes('fixture-private-token')&&!error.providerMessage.includes('hunter-secret')&&!error.providerMessage.includes('ignored-secondary-message'));
+  for(const payload of [{message:{private:'object-secret'}},{message:[{private:'array-object-secret'}]},{debug:'debug-secret'}]){
+    const invalid=new Liara(()=>({token:'fixture-private-token'}),async()=>Response.json(payload,{status:400}));
+    await assert.rejects(invalid.create({name:'test'}),error=>!('providerMessage' in error));
+  }
+});
+test('environment failures never expose provider details for any response status',async()=>{
+  for(const status of [400,401,403,409,500]){
+    const client=new Liara(()=>({token:'fixture-private-token'}),async()=>Response.json({message:'Invalid environment value env-secret',error:{message:'env-secret'}},{status}));
+    await assert.rejects(client.updateEnvs('test',[{key:'VALUE',value:'env-secret'}]),error=>error.status===status&&!('providerMessage' in error)&&!error.message.includes('env-secret'));
+  }
 });

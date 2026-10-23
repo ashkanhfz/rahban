@@ -9,6 +9,11 @@ function stage(path,method){
   if(path.endsWith('/actions/scale'))return 'service state change';
   return path.endsWith('/sources')?'source upload':path.endsWith('/releases')?'release creation':path.endsWith('/actions/restart')?'service restart':'request';
 }
+function providerMessage(value,token){
+  const message=Array.isArray(value?.message)&&value.message.every(item=>typeof item==='string')?value.message.slice(0,10).join('; '):value?.message;
+  const detail=[message,value?.error?.message,value?.error,value?.data?.message].find(item=>typeof item==='string'&&item.trim());
+  return detail?redact(detail,[token]).replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g,' ').replace(/\s+/g,' ').trim().slice(0,500):'';
+}
 function rejected(status,operation,value,token){
   const known={401:'Liara did not accept the API token. Reconnect in Settings with a valid token.',402:'Insufficient credit. Top up your Liara account.',403:'This account cannot perform this operation. Check the token permissions and selected team.',404:'The requested resource was not found in this account or team. Refresh the service list.',429:'Liara is limiting requests. Wait briefly before trying again.'};
   let message=known[status]||`Liara rejected ${operation}.`;
@@ -18,11 +23,12 @@ function rejected(status,operation,value,token){
   if(status===403&&value?.data?.code==='free_plan_platform')message='The free plan is unavailable for this platform. Select another plan and review its cost.';
   if(status===403&&value?.data?.code==='free_plan_count')message='This account has reached its free-service limit. Select another plan and review its cost.';
   if(status===400){
-    const detail=typeof value?.message==='string'||Array.isArray(value?.message)?redact(String(value.message),[token]).replace(/[\u0000-\u001f\u007f]/g,' ').slice(0,500):'';
-    message=operation==='environment update'?'Liara rejected the environment update. Check the variable names and values in the reviewed configuration.':operation==='service deletion'?'Liara rejected service deletion. Refresh the app and check pending operations in Liara.':operation==='service state change'?'Liara rejected the service state change. Refresh the app before preparing another request.':`Liara rejected the ${operation} settings. Review the name, plan and network.${detail?' '+detail:''}`;
+    message=operation==='environment update'?'Liara rejected the environment update. Check the variable names and values in the reviewed configuration.':operation==='service deletion'?'Liara rejected service deletion. Refresh the app and check pending operations in Liara.':operation==='service state change'?'Liara rejected the service state change. Refresh the app before preparing another request.':`Liara rejected the ${operation} settings. Review the supplied configuration.`;
   }
   if(status>=500)message=`Liara could not confirm the ${operation}. Check the Liara console before trying again.`;
-  return Object.assign(new Error(`${message} (HTTP ${status})`),{status,code:`LIARA_HTTP_${status}`});
+  const detail=operation==='environment update'?'':providerMessage(value,token);
+  if(status===400&&detail)message+=' '+detail;
+  return Object.assign(new Error(`${message} (HTTP ${status})`),{status,code:`LIARA_HTTP_${status}`,...(detail?{providerMessage:detail}:{})});
 }
 function invalidResponse(){return Object.assign(new Error('Liara returned an unexpected response. Refresh the connection; do not assume that the account has no resources.'),{code:'LIARA_INVALID_RESPONSE'});}
 export class Liara {

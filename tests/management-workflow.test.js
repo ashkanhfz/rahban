@@ -68,6 +68,14 @@ test('start and stop are separate explicitly approved writes, verified against L
   f.storageHasNoSecrets();
 });
 
+test('environment verification failures keep echoed values out of jobs, API errors and storage',{timeout:10000},async t=>{
+  const f=await fixture(t),approval=await f.propose('update-env',{changes:{updates:[{key:'CHANGE',value:newValue}],remove:[]}});
+  f.configure({afterEnvUpdateError:true});const job=await f.execute(approval);
+  assert.equal(job.status,'needs_attention');assert.equal(job.failure.stage,'Provider state verification');assert.equal(job.failure.status,400);assert.ok(!job.failure.providerMessage);f.noSecrets(job);
+  const verification=await f.call('/jobs/'+job.id+'/verify','POST',{});assert.equal(verification.status,400);assert.match(verification.body.error,/could not confirm the environment change/);f.noSecrets(verification.body);
+  assert.equal(f.writes().length,1,'Verification errors must not replay environment writes');f.noSecrets((await f.call('/state')).body);f.storageHasNoSecrets();
+});
+
 test('uncertain deletion needs read-only verification before history removal and never repeats the delete',{timeout:15000},async t=>{
   const f=await fixture(t);
   assert.equal((await f.call('/services/management-test/monitor','POST',{enabled:true,intervalMinutes:60})).status,200);

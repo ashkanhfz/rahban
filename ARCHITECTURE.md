@@ -2,6 +2,10 @@
 
 React provides the dark interface. Express serves the built frontend and API. SQLite stores projects, proposals, jobs, incidents, HTTP observations, health-check schedules, GitHub update settings, runtime identity, and audit records. This is one application process; no Grafana, Prometheus, external worker, or message broker is required.
 
+Browser History routes identify deployment steps, individual jobs, service checks, and Settings. Express serves the application shell for direct page requests. A per-tab draft stores only allowed non-secret fields and a source ID. `GET /api/sources/:id` checks the persisted archive before returning inspection metadata; `GET /api/jobs/:id` resolves older deep links within the current account and environment. Restoring a review regenerates its preview and never restores approval consent or executes an operation.
+
+Jobs record their current operation stage. Failures retain an error code, available HTTP status, sanitized provider detail, and recovery guidance. An uncertain provider write requires outcome verification before another attempt; no write is retried automatically.
+
 ```mermaid
 flowchart LR
   UI[User interface] --> Inspect[Inspect ZIP or GitHub source]
