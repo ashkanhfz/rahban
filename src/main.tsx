@@ -1,15 +1,22 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {ArrowRight, Check, CheckCircle2, ChevronDown, ExternalLink, Loader2, RefreshCw, Settings2, Upload, X} from 'lucide-react';
+import {ArrowRight, Check, CheckCircle2, ChevronDown, ExternalLink, FolderArchive, GitBranch, Loader2, LogOut, RefreshCw, Settings2, Upload, X} from 'lucide-react';
 import './styles.css';
 
 type Row = Record<string, any>;
 type DeploySettings = {port: number|null; healthPath: string|null; healthTimeoutMs: number|null; buildCache: boolean|null};
 let csrf = '';
-async function api(path: string, method = 'GET', body?: unknown) {
+let sessionGeneration = 0;
+let sessionRefresh: Promise<void>|null = null;
+function renewSession() {
+  if (!sessionRefresh) sessionRefresh = api('/session').then(result => {csrf = result.csrf; sessionGeneration++;}).finally(() => {sessionRefresh = null;});
+  return sessionRefresh;
+}
+async function api(path: string, method = 'GET', body?: unknown, retry = true): Promise<any> {
   const response = await fetch('/api' + path, {method, headers: {...(body instanceof FormData ? {} : {'Content-Type': 'application/json'}), 'x-csrf-token': csrf}, body: body instanceof FormData ? body : body === undefined ? undefined : JSON.stringify(body)});
   const data = await response.json();
   if (response.status === 401 && data.loginRequired) { window.location.assign('/auth/login'); throw new Error('Please sign in again.'); }
+  if (response.status === 401 && retry && path !== '/session') {await renewSession(); return api(path, method, body, false);}
   if (!response.ok) throw new Error(data.error || 'Request failed. Please try again.');
   return data;
 }
@@ -30,7 +37,7 @@ function Job({job, services, onVerify, busy}: {job: Row, services: Row[], onVeri
   return <article className="job"><div className="row spread"><div><strong>{job.title}</strong><small className="technical">{job.target}</small></div><Badge status={job.status}/></div>
     <ol className="job-steps">{(job.steps || []).map((item: Row, i: number) => <li key={i} className={item.status === 'failed' ? 'warning' : ''}>{item.status === 'failed' ? '!' : '✓'} {item.title}</li>)}</ol>
     {job.message && <p className="job-message">{job.message}</p>}
-    <div className="row wrap">{site && job.type === 'deploy' && job.status === 'succeeded' && <a className="button primary" href={site} target="_blank" rel="noreferrer">Open website<ExternalLink size={15}/></a>}{job.status === 'needs_attention' && <button disabled={busy} onClick={() => onVerify(job.id)}><RefreshCw size={15}/>Check health again</button>}<time className="muted">{date(job.created)}</time></div>
+    <div className="row wrap">{site && job.type === 'deploy' && job.status === 'succeeded' && <a className="button primary" href={site} target="_blank" rel="noreferrer">Open website<ExternalLink size={15}/></a>}{(job.status === 'needs_attention' || (job.status === 'interrupted' && job.releaseId)) && <button disabled={busy} onClick={() => onVerify(job.id)}><RefreshCw size={15}/>Check health again</button>}<time className="muted">{date(job.created)}</time></div>
   </article>;
 }
 
@@ -38,15 +45,26 @@ function App() {
   const [state, setState] = useState<Row|null>(null), [page, setPage] = useState('deploy'), [online, setOnline] = useState(true);
   const [busy, setBusy] = useState(''), [message, setMessage] = useState(''), [step, setStep] = useState(1);
   const [source, setSource] = useState<Row|null>(null), [repo, setRepo] = useState(''), [branch, setBranch] = useState('main');
+  const bootId = useRef(''), [recovered, setRecovered] = useState(false);
   const [selected, setSelected] = useState(''), [deployTarget, setDeployTarget] = useState(''), [preview, setPreview] = useState<Row|null>(null);
   const [port, setPort] = useState(''), [healthPath, setHealthPath] = useState(''), [healthTimeout, setHealthTimeout] = useState(''), [buildCache, setBuildCache] = useState('');
   const [plans, setPlans] = useState<Row|null>(null), [planId, setPlanId] = useState(''), [bundleId, setBundleId] = useState(''), [appName, setAppName] = useState('');
   const [approval, setApproval] = useState<Row|null>(null), [confirmation, setConfirmation] = useState(''), [consent, setConsent] = useState(false), [jobId, setJobId] = useState('');
   const [selectedIncident, setSelectedIncident] = useState(''), [prompt, setPrompt] = useState(''), [logData, setLogData] = useState<Row|null>(null);
   const [token, setToken] = useState(''), [team, setTeam] = useState(''), [modelBase, setModelBase] = useState(''), [modelKey, setModelKey] = useState(''), [modelName, setModelName] = useState(''), [share, setShare] = useState(false);
-  const load = async () => { try { const next = await api('/state'); setState(next); setOnline(true); return next; } catch (error) { setOnline(false); throw error; } };
+  const load = async () => {
+    try {
+      const previousSession = sessionGeneration;
+      const next = await api('/state');
+      if (next.runtime?.bootId) {
+        if (bootId.current && bootId.current !== next.runtime.bootId) {if (sessionGeneration === previousSession) await renewSession(); setRecovered(true); setApproval(null);}
+        bootId.current = next.runtime.bootId;
+      }
+      setState(next); setOnline(true); return next;
+    } catch (error) {setOnline(false); throw error;}
+  };
   const run = async (label: string, operation: () => Promise<unknown>) => { if (busy) return; setBusy(label); setMessage(''); try { await operation(); await load(); } catch (error) { setMessage((error as Error).message); } finally { setBusy(''); } };
-  useEffect(() => { api('/session').then(result => {csrf = result.csrf; return load();}).catch(error => setMessage(error.message)); const timer = setInterval(() => load().catch(() => {}), 4000); return () => clearInterval(timer); }, []);
+  useEffect(() => { renewSession().then(load).catch(error => setMessage(error.message)); const timer = setInterval(() => load().catch(() => {}), 4000); return () => clearInterval(timer); }, []);
   useEffect(() => { if (state?.settings) { setTeam(state.settings.team || ''); setModelBase(state.settings.llmBase || ''); setModelName(state.settings.llmModel || ''); setShare(!!state.settings.shareEvidence); } }, [state?.settings?.team, state?.settings?.llmBase, state?.settings?.llmModel, state?.settings?.shareEvidence]);
   useEffect(() => {
     const services: Row[] = state?.services || [];
@@ -94,8 +112,9 @@ function App() {
   const hasActiveJob = otherJobs.some(item => item.status === 'running');
 
   return <div className="app">
-    <header className="header"><button className="brand" onClick={() => navigate('deploy')}>Rahban</button><nav aria-label="Pages"><button aria-current={page === 'deploy' ? 'page' : undefined} onClick={() => navigate('deploy')}>Deploy</button><button aria-current={page === 'incidents' ? 'page' : undefined} onClick={() => navigate('incidents')}>Check service</button></nav><div className="header-end"><button aria-label="Settings" className={'plain ' + (page === 'settings' ? 'active' : '')} onClick={() => navigate('settings')}><Settings2 size={16}/><span>Settings</span></button>{state.hosting?.public && <form action="/auth/logout" method="post"><button className="plain" type="submit">Sign out</button></form>}</div></header>
-    <main className="main"><div className="page-title"><h1>{titles[page]}</h1><span className="muted">{live ? 'Liara' : 'Demo'}</span></div>
+    <header className="header"><button className="brand" onClick={() => navigate('deploy')}><span className="brand-mark" aria-hidden="true">r</span>Rahban</button><nav aria-label="Pages"><button aria-current={page === 'deploy' ? 'page' : undefined} onClick={() => navigate('deploy')}>Deploy</button><button aria-current={page === 'incidents' ? 'page' : undefined} onClick={() => navigate('incidents')}>Check service</button></nav><div className="header-end"><button aria-label="Settings" className={'plain ' + (page === 'settings' ? 'active' : '')} onClick={() => navigate('settings')}><Settings2 size={16}/><span>Settings</span></button>{state.hosting?.public && <form action="/auth/logout" method="post"><button className="plain" type="submit" aria-label="Sign out"><LogOut size={15}/><span>Sign out</span></button></form>}</div></header>
+    <main className="main"><div className="page-title"><h1>{titles[page]}</h1><span className={'environment ' + (live ? 'live' : '')}><span aria-hidden="true"/>{live ? 'Liara connected' : 'Demo environment'}</span></div>
+      {recovered && <div className="notice message" role="status"><span>Rahban restarted. Review interrupted operations before retrying.</span><button className="plain" aria-label="Dismiss recovery notice" onClick={() => setRecovered(false)}><X size={16}/></button></div>}
       {!online && <p className="notice warning" role="alert">Connection lost. Displayed information may be outdated. <button className="plain" disabled={!!busy} onClick={() => run('refresh', load)}>Retry</button></p>}
       {message && <div className="notice message" role="alert"><span>{message}</span><button className="plain" aria-label="Dismiss message" onClick={() => setMessage('')}><X size={16}/></button></div>}
       {busy && <p className="request-status" role="status"><Loader2 size={14} className="spin"/>{busy === 'preview' ? 'Checking settings…' : busy === 'upload' || busy === 'github' ? 'Inspecting project…' : 'Working…'}</p>}
@@ -104,11 +123,11 @@ function App() {
         <ol className="steps" aria-label="Deployment steps">{['Project', 'Destination', 'Review'].map((label, i) => <li key={label} className={step === i + 1 ? 'current' : step > i + 1 ? 'done' : ''}><button disabled={!!busy || i + 1 > step} aria-current={step === i + 1 ? 'step' : undefined} onClick={() => {setStep(i + 1); setJobId('');}}><span>{step > i + 1 ? <Check size={13}/> : number(i + 1)}</span>{label}</button></li>)}</ol>
         <section className="workspace" aria-label={['', 'Choose project', 'Choose destination', 'Review deployment'][step]}>
           {step === 1 && <>
-            <h2>Choose your project</h2><p className="muted">Upload a project ZIP, up to 10 MB.</p>
-            <div className="source-actions"><label className={'button primary file-button ' + (busy ? 'disabled' : '')}><Upload size={16}/>Choose ZIP file<input aria-label="Choose ZIP file" type="file" accept=".zip" disabled={!!busy} onChange={event => {const file = event.target.files?.[0]; event.target.value = ''; if (file) run('upload', async () => {const data = new FormData(); data.append('file', file); acceptSource(await api('/sources/upload', 'POST', data));});}}/></label><button className="plain" disabled={!!busy} onClick={() => run('sample', async () => acceptSource(await api('/sources/sample', 'POST', {})))}>Use sample project</button></div>
-            <details className="fold"><summary>Import from GitHub<ChevronDown size={15}/></summary><form className="fold-content" onSubmit={event => {event.preventDefault(); run('github', async () => acceptSource(await api('/sources/github', 'POST', {url: repo.trim(), branch: branch.trim() || 'main'})));}}><div className="field"><label htmlFor="repo">Public repository URL</label><input id="repo" type="url" dir="ltr" placeholder="https://github.com/you/project" value={repo} onChange={event => setRepo(event.target.value)} required/></div><div className="field"><label htmlFor="branch">Branch</label><input id="branch" dir="ltr" value={branch} onChange={event => setBranch(event.target.value)}/></div><button disabled={!!busy || !repo.trim()} type="submit">Import and inspect</button></form></details>
-            {source && <div className="source-result"><div className="row spread"><strong className="technical">{source.name || source.label}</strong><span className="muted"><bdi>{source.platform === 'docker' ? 'Docker' : 'Node.js'}</bdi> · {number(source.fileCount)} files</span></div><Checks items={source.checks || []}/>{!!(source.requiredEnv ?? source.env ?? []).length && <p className="notice">Set <bdi>{(source.requiredEnv ?? source.env ?? []).join(', ')}</bdi> in the Liara console before deployment.</p>}</div>}
-            <div className="step-actions"><button className="primary" disabled={!!busy || !source} onClick={() => setStep(2)}>Continue<ArrowRight size={16}/></button></div>
+            <h2>Choose your project</h2>
+            <div className="source-upload"><FolderArchive size={28} strokeWidth={1.5} aria-hidden="true"/><div><strong>Project archive</strong><p className="muted">ZIP file, up to 10 MB</p></div><div className="source-actions"><label className={'button primary file-button ' + (busy ? 'disabled' : '')}><Upload size={16}/>Choose ZIP file<input aria-label="Choose ZIP file" type="file" accept=".zip" disabled={!!busy} onChange={event => {const file = event.target.files?.[0]; event.target.value = ''; if (file) run('upload', async () => {const data = new FormData(); data.append('file', file); acceptSource(await api('/sources/upload', 'POST', data));});}}/></label><button className="plain" disabled={!!busy} onClick={() => run('sample', async () => acceptSource(await api('/sources/sample', 'POST', {})))}>Use sample project</button></div></div>
+            <details className="fold"><summary><GitBranch size={16}/>Import from GitHub<ChevronDown size={15}/></summary><form className="fold-content" onSubmit={event => {event.preventDefault(); run('github', async () => acceptSource(await api('/sources/github', 'POST', {url: repo.trim(), branch: branch.trim() || 'main'})));}}><div className="field"><label htmlFor="repo">Public repository URL</label><input id="repo" type="url" dir="ltr" placeholder="https://github.com/you/project" value={repo} onChange={event => setRepo(event.target.value)} required/></div><div className="field"><label htmlFor="branch">Branch</label><input id="branch" dir="ltr" value={branch} onChange={event => setBranch(event.target.value)}/></div><button disabled={!!busy || !repo.trim()} type="submit">Import and inspect</button></form></details>
+            {source && <div className="source-result"><div className="row spread"><strong className="technical">{source.name || source.label}</strong><span className="source-kind"><bdi>{source.platform === 'docker' ? 'Docker' : source.platform === 'node' ? 'Node.js' : 'Unsupported project'}</bdi> · {number(source.fileCount)} files</span></div>{source.github && <p className="field-note repository"><GitBranch size={14}/><span>{source.github.repo} · {source.github.branch}{source.github.commit ? ' · ' + source.github.commit.slice(0, 7) : ''}</span></p>}<Checks items={source.checks || []}/>{!source.ready && source.summary && <p className="notice warning">{source.summary}</p>}{!!(source.requiredEnv ?? source.env ?? []).length && <p className="notice">Set <bdi>{(source.requiredEnv ?? source.env ?? []).join(', ')}</bdi> in the Liara console before deployment.</p>}</div>}
+            <div className="step-actions"><button className="primary" disabled={!!busy || !source?.ready} onClick={() => setStep(2)}>Continue<ArrowRight size={16}/></button></div>
           </>}
           {step === 2 && <>
             <h2>Deployment destination</h2>
@@ -168,6 +187,7 @@ function App() {
         <details className="fold"><summary>Analysis model <span className="muted">optional</span><ChevronDown size={15}/></summary><form className="fold-content" onSubmit={event => {event.preventDefault(); const suppliedKey = modelKey; setModelKey(''); run('model', async () => {await api('/settings', 'POST', {llmBase: modelBase, llmModel: modelName, ...(suppliedKey ? {llmKey: suppliedKey} : {}), shareEvidence: share}); setMessage('Model settings saved.');});}}>
           <p className="field-note">Optional for troubleshooting. Not needed to deploy.</p><div className="field"><label htmlFor="model-base">API URL</label><input id="model-base" type="url" dir="ltr" placeholder="https://provider.example/v1" value={modelBase} onChange={event => setModelBase(event.target.value)}/></div><div className="field"><label htmlFor="model-name">Model name</label><input id="model-name" dir="ltr" value={modelName} onChange={event => setModelName(event.target.value)}/></div><div className="field"><label htmlFor="model-key">API key</label><input id="model-key" type="password" autoComplete="off" dir="ltr" value={modelKey} onChange={event => setModelKey(event.target.value)}/></div><label className="checkbox"><input type="checkbox" checked={share} onChange={event => setShare(event.target.checked)}/><span>Send the request and error evidence to this provider for analysis. Logs may still contain sensitive data.</span></label><button type="submit" disabled={!!busy || !modelBase || !modelName}>Save model</button>
         </form></details>
+        {state.runtime && <details className="fold"><summary>Runtime information<ChevronDown size={15}/></summary><dl className="facts runtime"><div><dt>Instance</dt><dd className="technical">{state.runtime.instanceId}</dd></div><div><dt>Started</dt><dd>{date(state.runtime.startedAt)}</dd></div><div><dt>Boot</dt><dd className="technical">{state.runtime.bootId}</dd></div><div><dt>Recovery</dt><dd>{state.runtime.recovered ? 'Restored from saved state' : 'First start'}</dd></div></dl></details>}
         <details className="fold"><summary>Demo environment<ChevronDown size={15}/></summary><div className="fold-content"><p className="field-note">Inspect projects and practice troubleshooting without deploying to Liara.</p><div className="row wrap"><button disabled={!!busy || !live} onClick={() => switchMode('demo')}>Use demo environment</button>{state.settings.connected && <button disabled={!!busy || live} onClick={() => switchMode('live')}>Use Liara</button>}</div></div></details>
       </section>}
 
@@ -183,7 +203,7 @@ function App() {
       {approval.payload?.settings && <ResolvedSettings settings={approval.payload.settings}/>}
       {approval.cost && <div className="cost"><strong>About {number(approval.cost.monthlyEstimate)} toman / month</strong><p>{approval.cost.assumption}</p></div>}
       <p className="field-note">{approval.rollback}</p><p className="field-note">Proposal expires {date(approval.expires)}</p>
-      <form onSubmit={event => {event.preventDefault(); run('execute', async () => {const result = await api('/approvals/' + approval.id + '/execute', 'POST', {confirmation}); setJobId(result.id); setApproval(null); if (approval.type === 'deploy') {setStep(3); setPage('deploy');} else if (approval.type === 'create-app') {setStep(2); setDeployTarget(approval.target); setPage('deploy');} });}}>
+      <form onSubmit={event => {event.preventDefault(); run('execute', async () => {const result = await api('/approvals/' + approval.id + '/execute', 'POST', {confirmation}); if (['deploy', 'create-app'].includes(approval.type)) setJobId(result.id); setApproval(null); if (approval.type === 'deploy') {setStep(3); setPage('deploy');} else if (approval.type === 'create-app') {setStep(2); setDeployTarget(approval.target); setPage('deploy');} });}}>
         <div className="field"><label htmlFor="confirmation">Enter the service name to confirm</label><input id="confirmation" autoFocus dir="ltr" autoComplete="off" placeholder={approval.target} value={confirmation} onChange={event => setConfirmation(event.target.value)}/></div><label className="checkbox"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)}/><span>I approve this change{approval.cost ? ' and its cost' : ''}.</span></label><button type="submit" className="primary full" disabled={!!busy || !consent || confirmation !== approval.target || approval.expires < Date.now()}>{busy === 'execute' ? <Loader2 size={16} className="spin"/> : <CheckCircle2 size={16}/>}Approve and run</button>
       </form>{message && <p className="notice warning" role="alert">{message}</p>}
     </section></div>}

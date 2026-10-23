@@ -10,6 +10,7 @@ globalThis.fetch=async(input,init={})=>{
     appendFileSync(process.env.TEST_LIARA_CALLS,JSON.stringify({path:url.pathname,method:init.method||'GET',body})+'\n');
     let value;
     if(url.pathname==='/v1/me')value={plans:{projects:{small:{available:true,price:1}},projectBundlePlans:{small:{basic:{available:true,displayPrice:0}}}}};
+    else if(url.pathname==='/v1/projects')value={projects:[{project_id:'deploy-test',name:'deploy-test',type:'docker',status:'running'}]};
     else if(url.pathname==='/v1/projects/')value={};
     else if(url.pathname.endsWith('/sources'))value={sourceID:'source-test'};
     else if(url.pathname.endsWith('/releases'))value={releaseID:'release-test'};

@@ -15,6 +15,8 @@ import {recommendPlan} from './sizing.js';
 import {waitForHealthy,probeHttp} from './health.js';
 import {deploySettings,resolveSettings,previewDeployment} from './deployment.js';
 import {installAccess} from './access.js';
+import {resolveGitHubSource,downloadGitHubArchive} from './github.js';
+import {openRuntime} from './runtime.js';
 
 const root=resolve(fileURLToPath(new URL('..',import.meta.url)));
 if(process.env.RAHBAN_IGNORE_ENV!=='1')try{process.loadEnvFile(join(root,'.env'));}catch{}
@@ -23,6 +25,10 @@ const hosting=process.env.RAHBAN_IGNORE_ENV==='1'?{}:(existsSync(hostingFile)?JS
 const publicOrigin=process.env.PUBLIC_ORIGIN||hosting.origin||'';
 const data=resolve(process.env.DATA_DIR||hosting.dataDir||join(root,'data'));mkdirSync(join(data,'sources'),{recursive:true});
 const store=openStore(data);
+const runtime=openRuntime(store);
+const appendAudit=store.audit;
+store.audit=(event,detail)=>appendAudit(event,{...detail,rahban:runtime.snapshot().signature,bootId:runtime.snapshot().bootId});
+store.audit('rahban.started',{recovered:runtime.snapshot().recovered,previousLastSeenAt:runtime.snapshot().previousLastSeenAt});
 // In-flight operations after a process crash are uncertain: never replay a cloud mutation.
 store.db.prepare("UPDATE approvals SET status='interrupted' WHERE status='executing'").run();
 for(const job of store.list('job').filter(j=>j.status==='running'))store.put('job',{...job,status:'interrupted',message:'Interrupted. Check Liara before retrying.'});
@@ -31,6 +37,7 @@ let mode='demo',demoFault=null;const demoLogs=[];
 const sessions=new Map();
 const liara=new Liara(()=>config);
 const app=express();app.disable('x-powered-by');
+app.use((req,res,next)=>{const identity=runtime.snapshot();res.set('X-Rahban-Instance',identity.instanceId).set('X-Rahban-Boot',identity.bootId);next();});
 // Keep same-origin form navigation origins observable for the login Origin gate.
 app.use(helmet({referrerPolicy:{policy:'same-origin'},contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'"],fontSrc:["'self'"],imgSrc:["'self'",'data:'],connectSrc:["'self'"],frameSrc:["'none'"],upgradeInsecureRequests:publicOrigin?[]:null}}}));
 app.use(express.json({limit:'200kb'}));
@@ -75,7 +82,7 @@ app.post('/api/disconnect',(req,res)=>{config.token='';config.llmKey='';config.r
 app.post('/api/mode',(req,res)=>{const next=z.enum(['demo','live']).parse(req.body.mode);if(next==='live'&&!config.token)throw new Error('Connect your Liara account first.');mode=next;res.json({mode});});
 app.get('/api/state',api(async(req,res)=>{
   const probes=store.db.prepare('SELECT service,at,ok,ms,code FROM probes WHERE at>? AND mode=? ORDER BY at DESC LIMIT 900').all(Date.now()-3600000,mode).reverse();
-  res.json({mode,hosting:{public:!!publicOrigin,persistent:!!hosting.dataDir},settings:publicConfig(),services:store.list('service').filter(s=>s.mode===mode),jobs:store.list('job').filter(j=>j.mode===mode),incidents:store.list('incident').filter(j=>j.mode===mode),approvals:approvals().filter(j=>j.mode===mode),probes,audit:store.db.prepare('SELECT seq,body,hash FROM audit ORDER BY seq DESC LIMIT 40').all().map(r=>({...JSON.parse(r.body),seq:r.seq,hash:r.hash})),demoFault,limits:['Dockerfile and Node.js deployments are supported.','Health checks use HTTP requests.','Application CPU and RAM metrics are unavailable.','Manage domains and plan changes in Liara. Automatic rollback is unavailable.']});
+  res.json({mode,runtime:runtime.snapshot(),hosting:{public:!!publicOrigin,persistent:true},settings:publicConfig(),services:store.list('service').filter(s=>s.mode===mode),jobs:store.list('job').filter(j=>j.mode===mode),incidents:store.list('incident').filter(j=>j.mode===mode),approvals:approvals().filter(j=>j.mode===mode),probes,audit:store.db.prepare('SELECT seq,body,hash FROM audit ORDER BY seq DESC LIMIT 40').all().map(r=>({...JSON.parse(r.body),seq:r.seq,hash:r.hash})),demoFault,limits:['Dockerfile and Node.js deployments are supported.','Health checks use HTTP requests.','Application CPU and RAM metrics are unavailable.','Manage domains and plan changes in Liara. Automatic rollback is unavailable.']});
 }));
 app.post('/api/sync',api(async(req,res)=>{
   requireMode('live');const apps=await liara.apps(),current=new Set();
@@ -89,18 +96,26 @@ app.get('/api/logs/:id',api(async(req,res)=>{
   const logs=mode==='demo'?demoLogs:await liara.logs(id);res.json({logs:logs.map(l=>({...l,line:safe(l.line)})),source:mode==='demo'?'local-sandbox':'liara-api'});
 }));
 
-async function saveSource(files,label){const info=inspect(files),bytes=await archive(files),id=randomUUID();writeFileSync(join(data,'sources',`${id}.tar.gz`),bytes);return store.put('source',{id,label,...info,sha256:digest(bytes)});}
+async function saveSource(files,label,metadata={}){const info=inspect(files),bytes=await archive(files),id=randomUUID();writeFileSync(join(data,'sources',`${id}.tar.gz`),bytes);return store.put('source',{id,label,...info,...metadata,sha256:digest(bytes),rahban:runtime.snapshot().signature});}
+async function importGitHub(github){return saveSource(unpackZip(await downloadGitHubArchive(github)),github.repo,{github});}
 app.post('/api/sources/sample',api(async(req,res)=>res.json(await saveSource(sampleFiles,'Sample project'))));
 const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:10*1024*1024,files:1}});
 app.post('/api/sources/upload',upload.single('file'),api(async(req,res)=>{if(!req.file)throw new Error('Choose a ZIP file.');res.json(await saveSource(unpackZip(req.file.buffer),safe(req.file.originalname)));}));
 app.post('/api/sources/github',api(async(req,res)=>{
-  const repo=z.string().regex(/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/).parse(req.body.url).replace(/\/$/,'');
-  const branch=z.string().regex(/^[\w./-]{1,120}$/).parse(req.body.branch||'main');
-  const response=await fetch(`https://codeload.github.com/${new URL(repo).pathname.slice(1)}/zip/refs/heads/${branch}`,{signal:AbortSignal.timeout(30000),redirect:'error'});
-  if(!response.ok)throw new Error('Public repository or branch not found.');let size=0;const chunks=[];
-  for await(const c of response.body){size+=c.length;if(size>10*1024*1024)throw new Error('Archive limit is 10 MB.');chunks.push(c);}
-  res.json(await saveSource(unpackZip(Buffer.concat(chunks)),repo));
+  const github=await resolveGitHubSource(req.body.url,req.body.branch||'main');res.json(await importGitHub(github));
 }));
+
+async function validateDeployment(target,source,adapter=liara){
+  const service=store.get('service',target,'live');
+  if(!service)throw new Error('Refresh the Liara service list first.');
+  if(!source?.ready||service.platform!==source.platform)throw new Error('The service platform does not match the project. Review a new deployment.');
+  const details=await adapter.details(target);
+  if(!details)throw new Error('Liara returned no service details. Deployment stopped.');
+  if(details?.disks?.length)throw new Error('Deployment to services with persistent disks is not supported yet.');
+  const configured=new Set((Array.isArray(details?.envs)?details.envs:[]).map(env=>env.key||env.name));
+  const missing=(source.requiredEnv??source.env).filter(name=>!configured.has(name));
+  if(missing.length)throw new Error(`Set ${missing.join(', ')} in Liara, then prepare a new deployment.`);
+}
 
 app.post('/api/deployment/preview',api(async(req,res)=>{
   const body=z.object({sourceId:z.string().uuid(),settings:deploySettings.nullish()}).parse(req.body);
@@ -124,14 +139,10 @@ app.post('/api/proposals',api(async(req,res)=>{
       if(!service||service.mode!=='live')throw new Error('Refresh the Liara service list first.');
       if(body.type==='deploy'){
         const source=store.get('source',body.sourceId||'');if(!source?.ready)throw new Error('Choose a valid project.');
-        if(service.platform!==source.platform)throw new Error('The service platform does not match the project. Choose or create a matching service.');
-        // Preserve environment by not sending envs. Disk-backed apps need an explicit migration procedure.
-        const details=await liara.details(body.target);if(details?.disks?.length)throw new Error('Deployment to services with persistent disks is not supported yet.');
-        const envs=Array.isArray(details?.envs)?details.envs:[];
-        const configured=new Set(envs.map(e=>e.key||e.name));const missing=(source.requiredEnv??source.env).filter(name=>!configured.has(name));
-        if(missing.length)throw new Error(`Set ${missing.join(', ')} in Liara, then prepare a new deployment.`);
+        await validateDeployment(body.target,source);
         const settings=resolveSettings(source,body.settings,body.port);
-        payload={...body,platform:source.platform,port:settings.port,settings,sha256:source.sha256};title='Deploy to Liara';risk='high';impact='Uploads the reviewed files and creates a release. The service URL may be public.';rollback='No automatic rollback. Manage prior releases in Liara. Database migrations are not run.';
+        payload={...body,platform:source.platform,port:settings.port,settings,sha256:source.sha256};title='Deploy to Liara';risk='high';impact='Uploads the reviewed files and creates a release. The service URL may be public.';
+        rollback='No automatic rollback. Manage prior releases in Liara. Database migrations are not run.';
       }else{title='Restart service';risk='high';impact='May briefly interrupt the service. A restart may not fix the underlying problem.';rollback='A restart cannot be undone. Health is checked afterward.';}
     }
   }
@@ -140,18 +151,19 @@ app.post('/api/proposals',api(async(req,res)=>{
 app.post('/api/approvals/:id/reject',api(async(req,res)=>{const result=store.db.prepare("UPDATE approvals SET status='rejected' WHERE id=? AND status='pending' AND context=?").run(req.params.id,context());if(!result.changes)throw new Error('This request cannot be rejected in the current account.');store.audit('approval.rejected',{id:req.params.id});res.json({ok:true});}));
 app.post('/api/approvals/:id/execute',api(async(req,res)=>{
   const proposed=store.db.prepare('SELECT body FROM approvals WHERE id=?').get(req.params.id);
-  if(proposed&&store.list('job').some(j=>j.target===JSON.parse(proposed.body).target&&j.status==='running'))throw new Error('Another action is running on this service. Wait for it to finish.');
+  if(proposed){const target=JSON.parse(proposed.body).target;if(store.list('job').some(j=>j.target===target&&j.status==='running'))throw new Error('Another action is running on this service. Wait for it to finish.');}
   const action=claimApproval(store,req.params.id,context(),req.body.confirmation);
-  const job=store.put('job',{mode,settings:action.payload.settings,type:action.type,target:action.target,title:action.title,status:'running',steps:[{title:'Approval recorded',status:'done'}],approvalId:action.id});
+  const job=createJob(action);
   // Capture credentials and mode at claim time; later UI changes cannot redirect an approved operation.
   const configSnapshot={token:config.token,team:config.team};const adapter=new Liara(()=>configSnapshot);
   runOperation(action,job,adapter).catch(()=>{});res.status(202).json(job);
 }));
+function createJob(action){return store.put('job',{mode:action.mode,settings:action.payload.settings,type:action.type,target:action.target,title:action.title||'Deploy to Liara',status:'running',steps:[{title:'Approval recorded',status:'done'}],approvalId:action.id,rahban:runtime.snapshot().signature,bootId:runtime.snapshot().bootId});}
 function jobStep(job,title,status='done'){job.steps.push({title,status,at:new Date().toISOString()});store.put('job',job);}
 async function verifyService(id,count=3,environment=mode,settings){return (await waitForHealthy(()=>probe(id,environment,settings),{required:count,attempts:environment==='live'?15:3,interval:environment==='live'?2000:1200})).healthy;}
-function rememberDeployment(target,environment,settings){
+function rememberDeployment(target,environment,settings,metadata={}){
   const service=store.get('service',target,environment);
-  if(service)store.put('service',{...service,settings,state:'running'});
+  if(service)store.put('service',{...service,settings,state:'running',rahban:runtime.snapshot().signature,...metadata});
 }
 async function runOperation(action,job,adapter){
   try{
@@ -165,20 +177,22 @@ async function runOperation(action,job,adapter){
       if(!plan?.available||!bundle?.available||currentCost!==action.cost.monthlyEstimate)throw new Error('Plan availability or price changed. Prepare a new proposal.');
       await adapter.create(p);store.put('service',{id:action.target,name:action.target,mode:'live',platform:p.platform,domain:`${action.target}.liara.run`,state:'created',provider:'Liara'});jobStep(job,'Liara confirmed service creation');job.status='succeeded';job.message='Service created. You can deploy the project now.';
     }else if(action.type==='deploy'){
+      const metadata=store.get('source',p.sourceId);await validateDeployment(action.target,metadata,adapter);
+      job.github=metadata.github||null;job.commit=job.github?.commit||null;
       const source=readFileSync(join(data,'sources',`${p.sourceId}.tar.gz`));if(digest(source)!==p.sha256)throw new Error('Source checksum changed. Deployment stopped.');
       jobStep(job,'Approved source checksum verified');
-      const release=await adapter.deploy(action.target,source,p.platform,p.port,title=>jobStep(job,title),p.settings);job.releaseId=release.releaseID;if(!job.releaseId)throw new Error('Liara returned no release ID. Check the Liara console.');jobStep(job,'Release created in Liara');
+      const release=await adapter.deploy(action.target,source,p.platform,p.port,title=>{job.releaseRequested=true;jobStep(job,title);},{...p.settings,attribution:`${job.rahban} job:${job.id}${job.commit?' commit:'+job.commit:''}`});job.releaseId=release.releaseID;if(!job.releaseId)throw new Error('Liara returned no release ID. Check the Liara console.');jobStep(job,'Release created in Liara');
       let ready=false;for(let n=0;n<120;n++){const r=await adapter.release(job.releaseId);const state=r.release?.state;if(['FAILED','UNHEALTHY'].includes(state))throw Object.assign(new Error(`Liara release is ${state}. Check the logs.`),{releaseFailed:true});if(state==='READY'){ready=true;break;}await new Promise(r=>setTimeout(r,5000));}
       if(!ready)throw new Error('Release polling timed out. Check its status before retrying.');jobStep(job,'Liara release is READY');
-      rememberDeployment(action.target,action.mode,p.settings);
+      rememberDeployment(action.target,action.mode,p.settings,{github:metadata.github||null,lastJobId:job.id});
     }
     if(action.type!=='create-app'){
       const healthy=await verifyService(action.target,3,action.mode,p.settings);jobStep(job,'Three HTTP health checks',healthy?'done':'failed');job.status=healthy?'succeeded':'needs_attention';job.message=healthy?'Completed. All three health checks passed.':'Action submitted, but HTTP health is not confirmed.';
       if(healthy)for(const incident of store.list('incident').filter(i=>i.target===action.target&&i.status==='open'&&i.mode===action.mode)){store.put('incident',{...incident,status:'resolved',resolved:new Date().toISOString(),resolution:job.message,jobId:job.id});}
     }
-    store.put('job',job);store.db.prepare("UPDATE approvals SET status='completed' WHERE id=?").run(action.id);store.audit('operation.finished',{id:job.id,target:action.target,status:job.status});
+    store.put('job',job);store.db.prepare("UPDATE approvals SET status='completed' WHERE id=?").run(action.id);store.audit('operation.finished',{id:job.id,target:action.target,status:job.status,rahban:job.rahban,commit:job.commit});
   }catch(error){
-    job.status=job.releaseId&&!error.releaseFailed?'needs_attention':'failed';job.message=safe(error.message);
+    job.status=(job.releaseId||job.releaseRequested)&&!error.releaseFailed?'needs_attention':'failed';job.message=safe(error.message);
     store.put('job',job);store.db.prepare('UPDATE approvals SET status=? WHERE id=?').run(job.status==='failed'?'failed':'completed',action.id);
     store.audit('operation.'+job.status,{id:job.id,target:action.target,message:job.message});
   }
@@ -221,18 +235,22 @@ async function probe(id,environment=mode,approvedSettings){
 app.post('/api/probe/:id',api(async(req,res)=>{const service=store.get('service',req.params.id,mode);if(!service||service.mode!==mode)throw new Error('Service not found.');res.json(await probe(service.id));}));
 app.post('/api/jobs/:id/verify',api(async(req,res)=>{
   const job=store.get('job',req.params.id);
-  if(!job||job.mode!==mode||job.status!=='needs_attention')throw new Error('This operation is not awaiting verification.');
+  if(!job||job.mode!==mode||!(job.status==='needs_attention'||(job.status==='interrupted'&&job.releaseId)))throw new Error('This operation is not awaiting verification.');
+  if(job.type==='deploy'&&!job.releaseId)throw new Error('No release ID was received. Review the release in Liara before preparing another manual deployment. HTTP checks alone cannot confirm this release.');
   if(job.releaseId){const release=await liara.release(job.releaseId);if(release.release?.state!=='READY')throw new Error('Release is not READY. Check its status in Liara.');}
-  if(job.type==='deploy')rememberDeployment(job.target,job.mode,job.settings);
+  if(job.type==='deploy')rememberDeployment(job.target,job.mode,job.settings,{github:job.github||null,lastJobId:job.id});
   const healthy=await verifyService(job.target,3,job.mode,job.settings);jobStep(job,'Recheck: three consecutive healthy responses',healthy?'done':'failed');
   job.status=healthy?'succeeded':'needs_attention';job.message=healthy?'Deployment verified with three consecutive healthy responses.':'Service health is not confirmed yet.';
   store.put('job',job);store.audit('operation.health_verified',{id:job.id,target:job.target,healthy});
   if(healthy)for(const i of store.list('incident').filter(i=>i.mode===job.mode&&i.target===job.target&&i.status==='open'))store.put('incident',{...i,status:'resolved',resolved:new Date().toISOString(),resolution:job.message,jobId:job.id});
   res.json(job);
 }));
-app.get('/healthz',(req,res)=>res.json({status:'ok',service:'rahban',time:new Date().toISOString()}));
+app.get('/healthz',(req,res)=>res.set('Cache-Control','no-store').json({status:'ok',service:'rahban',time:new Date().toISOString(),runtime:runtime.snapshot()}));
 app.use(express.static(join(root,'dist')));
 app.get('/{*path}',(req,res)=>{if(req.path.startsWith('/api/'))return res.status(404).json({error:'API route not found.'});if(existsSync(join(root,'dist/index.html')))return res.sendFile(join(root,'dist/index.html'));res.status(503).send('Run npm run build first.');});
 app.use((error,req,res,next)=>{res.status(error instanceof z.ZodError?400:400).json({error:error instanceof z.ZodError?'Invalid input. Check the fields.':safe(error.message||'Unknown error')});});
 store.put('service',{id:'sandbox-store',name:'Sample store',mode:'demo',platform:'Node.js 22',provider:'Local sandbox',domain:null,state:'running'});
-const port=Number(process.env.PORT||hosting.port||4310);app.listen(port,process.env.HOST||hosting.host||'127.0.0.1',()=>{console.log(`Rahban listening on port ${port}`);probe('sandbox-store','demo');});
+const port=Number(process.env.PORT||hosting.port||4310);const server=app.listen(port,process.env.HOST||hosting.host||'127.0.0.1',()=>{console.log(`Rahban listening on port ${port}`);probe('sandbox-store','demo');});
+const heartbeat=setInterval(()=>runtime.heartbeat(),15000);
+function shutdown(){clearInterval(heartbeat);runtime.stop();server.close();setTimeout(()=>process.exit(0),1000).unref();}
+process.once('SIGTERM',shutdown);process.once('SIGINT',shutdown);

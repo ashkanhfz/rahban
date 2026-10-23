@@ -20,13 +20,13 @@ export class Liara {
   async logs(id){const x=await this.request(`/v2/projects/${encodeURIComponent(id)}/logs?start=${Math.floor(Date.now()/1000)-900}&direction=forward&last_lines=true`);return (x.data||[]).flatMap(g=>(g.values||[]).map(v=>({at:v[0],line:v[1]}))).slice(-150);}
   restart(id){return this.request(`/v1/projects/${encodeURIComponent(id)}/actions/restart`,{method:'POST'});}
   create(data){return this.request('/v1/projects/',{method:'POST',json:data});}
-  async deploy(id,archive,platform,port,onStage=()=>{},{buildCache=true}={}){
+  async deploy(id,archive,platform,port,onStage=()=>{},{buildCache=true,attribution='Rahban approved deployment'}={}){
     const form=new FormData();form.append('file',new Blob([archive],{type:'application/gzip'}),'source.tar.gz');
     const source=await this.request(`/v2/projects/${encodeURIComponent(id)}/sources`,{method:'POST',body:form});
     const sourceID=source.sourceID||source.sourceId||source._id;
     if(!sourceID)throw new Error('Liara upload returned no sourceID. Deployment stopped.');
     onStage('Source uploaded to Liara');
-    return this.request(`/v2/projects/${encodeURIComponent(id)}/releases`,{method:'POST',json:{sourceID,type:platform,port,platformConfig:{},build:{cache:buildCache,...(platform==='docker'?{dockerfile:'Dockerfile'}:{})},message:'Rahban approved deployment'}});
+    return this.request(`/v2/projects/${encodeURIComponent(id)}/releases`,{method:'POST',json:{sourceID,type:platform,port,platformConfig:{},build:{cache:buildCache,...(platform==='docker'?{dockerfile:'Dockerfile'}:{})},message:attribution}});
   }
   release(id){return this.request(`/v1/releases/${encodeURIComponent(id)}`);}
 }

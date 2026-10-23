@@ -1,6 +1,6 @@
 {
-  "checkedAt": "2026-10-23T13:37:46.047Z",
-  "scope": "English UI and Docker deployment revision; local runtime and simulated provider tests",
+  "checkedAt": "2026-10-23T14:04:22.965577+00:00",
+  "scope": "Dark Liara-style interface, manual pinned GitHub import, runtime identity and restart recovery; local and simulated-provider validation",
   "status": "passed",
   "checks": [
     {
@@ -12,7 +12,7 @@
       "name": "Unit and HTTP integration tests",
       "command": "npm test",
       "passed": true,
-      "tests": 28
+      "tests": 41
     },
     {
       "name": "Production frontend",
@@ -35,7 +35,7 @@
       "name": "Browser smoke test in Chrome",
       "passed": true,
       "checks": [
-        "English LTR initial deployment page",
+        "Dark English LTR deployment interface",
         "Sample Docker project detected; optional settings default to empty",
         "Actual sandbox HTTP 503, diagnosis, approval, recovery and three HTTP checks",
         "English incident report download",
@@ -52,6 +52,26 @@
       "name": "New-service deployment flow in Chrome with simulated provider state",
       "passed": true,
       "details": "Create service, review project, approve deployment, and show the resulting website link."
+    },
+    {
+      "name": "Manual GitHub deployment and restart with simulated providers",
+      "passed": true,
+      "details": "Review makes no Liara mutations. A changed branch cannot alter the approved commit. Uncertain release verification preserves source metadata. Restart keeps instance identity, rotates boot ID, invalidates old sessions and never replays deployment."
+    },
+    {
+      "name": "Real public GitHub import in production Chrome",
+      "passed": true,
+      "repository": "https://github.com/hamid-shafi/java-log-monitoring-pipeline",
+      "commit": "26491d6d9857b69ec3636d6a2cbc1fd8daa99e06",
+      "downloadBytes": 34384,
+      "checks": [
+        "Real GitHub import at pinned commit",
+        "Unsupported Java project explained before destination",
+        "Continue blocked until project ready",
+        "Runtime identity displayed",
+        "360px layout without overflow",
+        "No JavaScript errors"
+      ]
     }
   ],
   "notRun": [

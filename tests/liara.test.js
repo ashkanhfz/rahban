@@ -20,3 +20,12 @@ test('Docker releases use root Dockerfile and honor the approved build cache set
   assert.deepEqual(payload.build,{cache:false,dockerfile:'Dockerfile'});
   assert.deepEqual(payload.platformConfig,{});assert.ok(!('envs' in payload));
 });
+test('release creation retains instance, job and pinned commit attribution',async()=>{
+  const calls=[],events=[];
+  const attribution=`rahban:instance-123 job:job-456 commit:${'a'.repeat(40)}`;
+  const client=new Liara(()=>({token:'x'}),async(url,init)=>{calls.push({path:url.pathname,init});events.push(url.pathname);return Response.json(calls.length===1?{sourceID:'uploaded-source'}:{releaseID:'attributed-release'});});
+  const result=await client.deploy('app',Buffer.from('archive'),'docker',3000,title=>events.push(title),{attribution});
+  assert.equal(result.releaseID,'attributed-release');
+  assert.equal(JSON.parse(calls[1].init.body).message,attribution);
+  assert.deepEqual(events,['/v2/projects/app/sources','Source uploaded to Liara','/v2/projects/app/releases']);
+});
