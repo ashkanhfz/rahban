@@ -17,14 +17,14 @@ test('public operator gate protects frontend, metrics and API; rejects forged lo
     assert.equal((await call('/')).status,303);assert.equal((await call('/api/state')).status,401);assert.equal((await call('/metrics')).status,401);assert.equal((await call('/healthz')).status,200);
     assert.equal((await call('/auth/login',{headers:{Origin:'https://attacker.example'}})).status,403);
     assert.equal((await call('/auth/login',{method:'POST',body:new URLSearchParams({username:'rahban',password:'test-only-password'})})).status,403);
-    const form=await call('/auth/login'),html=await form.text(),nonce=html.match(/name="nonce" value="([a-f0-9]+)"/)[1],challenge=form.headers.getSetCookie()[0].split(';')[0];
-    assert.match(form.headers.get('set-cookie').join(';'),/Secure/);assert.match(form.headers.get('set-cookie').join(';'),/HttpOnly/);
-    const logged=await call('/auth/login',{method:'POST',headers:{Cookie:challenge,Origin:'https://rahban.example'},body:new URLSearchParams({nonce,username:'rahban',password:'test-only-password'})});
+    const form=await call('/auth/login'),html=await form.text(),nonce=html.match(/name="nonce" value="([a-f0-9]+)"/)[1];
+    const logged=await call('/auth/login',{method:'POST',headers:{Origin:'https://rahban.example'},body:new URLSearchParams({nonce,username:'rahban',password:'test-only-password'})});
     assert.equal(logged.status,303);assert.equal(logged.headers.get('location'),'/');
+    assert.match(logged.headers.get('set-cookie').join(';'),/Secure/);assert.match(logged.headers.get('set-cookie').join(';'),/HttpOnly/);
     const operator=logged.headers.getSetCookie().find(c=>c.startsWith('__Host-rahban_operator=')).split(';')[0];
     assert.equal((await call('/api/state',{headers:{Cookie:operator}})).status,200);
     assert.equal((await call('/api/state',{headers:{Host:'attacker.example',Cookie:operator}})).status,403);
-    assert.equal((await call('/auth/login',{method:'POST',headers:{Cookie:challenge},body:new URLSearchParams({nonce,username:'rahban',password:'test-only-password'})})).status,403);
+    assert.equal((await call('/auth/login',{method:'POST',headers:{Origin:'https://rahban.example'},body:new URLSearchParams({nonce,username:'rahban',password:'test-only-password'})})).status,403);
     await call('/auth/logout',{method:'POST',headers:{Cookie:operator,Origin:'https://rahban.example'}});
     assert.equal((await call('/api/state',{headers:{Cookie:operator}})).status,401);
   }finally{await new Promise(r=>server.close(r));}

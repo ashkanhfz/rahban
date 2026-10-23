@@ -32,11 +32,12 @@ export function installAccess(app,{origin,passwordHash:hash,username='rahban'}){
     }
     req.operator=true;next();
   });
-  app.get('/auth/login',(req,res)=>{prune(challenges);const nonce=randomBytes(32).toString('hex');challenges.set(nonce,{expires:now()+300000});res.cookie('__Host-rahban_login',nonce,{...options,maxAge:300000});res.type('html').send(page(req.query.failed?'نام کاربری یا رمز ورود درست نیست.':'',nonce));});
+  app.get('/auth/login',(req,res)=>{prune(challenges);const nonce=randomBytes(32).toString('hex');challenges.set(nonce,{expires:now()+300000});res.type('html').send(page(req.query.failed?'نام کاربری یا رمز ورود درست نیست.':'',nonce));});
   app.post('/auth/login',async(req,res,next)=>{
     try{
-      const nonce=cookie(req,'__Host-rahban_login'),challenge=challenges.get(nonce);challenges.delete(nonce);
-      if(!challenge||challenge.expires<now()||req.body.nonce!==nonce)return res.status(403).type('html').send(page('فرم منقضی شد؛ صفحه را تازه کنید.'));
+      // Same-origin form POSTs use an expiring, one-use form token.
+      const nonce=String(req.body.nonce||''),challenge=challenges.get(nonce);challenges.delete(nonce);
+      if(req.get('origin')!==origin||!challenge||challenge.expires<now())return res.status(403).type('html').send(page('فرم منقضی شد؛ صفحه را تازه کنید.'));
       prune(attempts);const address=req.socket.remoteAddress||'unknown',attempt=attempts.get(address)||{count:0,expires:now()+900000};
       if(attempt.count>=12)return res.status(429).set('Retry-After','900').type('html').send(page('تلاش‌های ورود زیاد است؛ ۱۵ دقیقه بعد دوباره امتحان کنید.'));
       attempt.count++;attempts.set(address,attempt);
@@ -44,7 +45,7 @@ export function installAccess(app,{origin,passwordHash:hash,username='rahban'}){
       const actual=await derive(password.slice(0,200),salt,64);
       if(!timingSafeEqual(actual,Buffer.from(expected,'hex'))||req.body.username!==username)return res.redirect(303,'/auth/login?failed=1');
       attempts.delete(address);prune(logins);const sid=randomBytes(32).toString('hex');logins.set(sid,{expires:now()+8*3600000});
-      res.clearCookie('__Host-rahban_login',options);res.cookie(cookieName,sid,{...options,maxAge:8*3600000});res.redirect(303,'/');
+      res.cookie(cookieName,sid,{...options,maxAge:8*3600000});res.redirect(303,'/');
     }catch(error){next(error);}
   });
   app.post('/auth/logout',(req,res)=>{logins.delete(cookie(req,cookieName));res.clearCookie(cookieName,options);res.redirect(303,'/auth/login');});
