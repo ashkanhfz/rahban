@@ -18,6 +18,8 @@ test('public operator gate protects frontend, metrics and API; rejects forged lo
     assert.equal((await call('/auth/login',{headers:{Origin:'https://attacker.example'}})).status,403);
     assert.equal((await call('/auth/login',{method:'POST',body:new URLSearchParams({username:'rahban',password:'test-only-password'})})).status,403);
     const form=await call('/auth/login'),html=await form.text(),nonce=html.match(/name="nonce" value="([a-f0-9]+)"/)[1];
+    // Browsers may also follow a favicon redirect to login; it must not invalidate the visible form.
+    await call('/auth/login');
     const logged=await call('/auth/login',{method:'POST',headers:{Origin:'https://rahban.example'},body:new URLSearchParams({nonce,username:'rahban',password:'test-only-password'})});
     assert.equal(logged.status,303);assert.equal(logged.headers.get('location'),'/');
     assert.match(logged.headers.get('set-cookie').join(';'),/Secure/);assert.match(logged.headers.get('set-cookie').join(';'),/HttpOnly/);
