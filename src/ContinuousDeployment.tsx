@@ -35,6 +35,7 @@ export function ContinuousDeployment({service, api, run, busy, onReview}: Props)
 
   return <details className="fold github-updates"><summary>GitHub updates<span className="muted">{saved ? statuses[saved.status] || saved.status : ''}</span><ChevronDown size={15}/></summary><div className="fold-content">
     <p className="update-repository"><GitBranch size={15}/><span><strong>{github.repo}</strong><small>{github.branch}{service.github.commit ? ' · Deployed ' + service.github.commit.slice(0, 7) : ''}</small></span></p>
+    <p className="field-note">Optional after your first successful deployment. Checks and automatic deployment are off by default. When enabled, pushed commits on this branch are detected at the next scheduled check, not instantly.</p>
     {loading && <p className="request-status" role="status"><Loader2 size={14} className="spin"/>Loading update settings…</p>}
     {error && <p className="notice warning" role="alert">{error} <button className="inline-link" disabled={busy || loading} onClick={refresh}>Retry</button></p>}
     {saved && <>
