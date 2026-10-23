@@ -1,0 +1,18 @@
+groups:
+  - name: rahban-service-health
+    rules:
+      - alert: RahbanServiceUnhealthy
+        expr: (rahban_service_up == 0) and on(service) (time() - rahban_probe_timestamp_seconds < 30)
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: 'HTTP probe failing or slow for {{ $labels.service }}'
+          description: 'Inspect logs and recent changes in Rahban. Never restart blindly.'
+      - alert: RahbanControlPlaneDown
+        expr: up{job="rahban"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Rahban metric endpoint unavailable'
