@@ -58,3 +58,11 @@ test('secrets are redacted and evidence distinguishes latency from resource gues
   assert.ok(!redacted.includes('private'));assert.ok(!redacted.includes('user:pass'));assert.ok(!redacted.includes('actual-user-token'));
   const results=diagnose([{line:'INFO request completed'}],{ok:0,code:200,ms:1700});assert.match(results[0].evidence,/1700/);assert.ok(!results[0].title.includes('memory'));
 });
+test('sizing states its source heuristic rather than claiming measured resource needs',()=>{
+  const generic=inspect(sampleFiles).sizing;
+  assert.equal(generic.minMemoryGB,.5);assert.equal(generic.minCpu,.25);assert.match(generic.basis,/No runtime measurements/);
+  const next=inspect({'package.json':JSON.stringify({scripts:{start:'next start'},devDependencies:{next:'15'}})}).sizing;
+  assert.equal(next.minMemoryGB,1);assert.match(next.basis,/Next.js appears in package.json/);
+  const docker=inspect({Dockerfile:'FROM eclipse-temurin:21'}).sizing;
+  assert.match(docker.basis,/Docker images may need more/);
+});

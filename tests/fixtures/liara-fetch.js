@@ -10,12 +10,13 @@ globalThis.fetch=async(input,init={})=>{
     appendFileSync(process.env.TEST_LIARA_CALLS,JSON.stringify({path:url.pathname,method:init.method||'GET',body})+'\n');
     let value;
     if(url.pathname==='/v1/me')value={plans:{projects:{small:{available:true,price:1}},projectBundlePlans:{small:{basic:{available:true,displayPrice:0}}}}};
+    else if(url.pathname==='/v1/networks')value={networks:[{_id:'network-test',name:'Default'}]};
     else if(url.pathname==='/v1/projects')value={projects:[{project_id:'deploy-test',name:'deploy-test',type:'docker',status:'running'}]};
     else if(url.pathname==='/v1/projects/')value={};
     else if(url.pathname.endsWith('/sources'))value={sourceID:'source-test'};
     else if(url.pathname.endsWith('/releases'))value={releaseID:'release-test'};
     else if(url.pathname==='/v1/releases/release-test'){
-      if(process.env.TEST_RELEASE_FAIL_ONCE==='1'&&releaseChecks++===0)return Response.json({},{status:503});
+      if(process.env.TEST_RELEASE_FAIL_ONCE==='1'&&releaseChecks++<2)return Response.json({},{status:503});
       value={release:{state:'READY'}};
     }
     else if(url.pathname==='/v1/projects/deploy-test')value={project:{envs:[],disks:[]}};

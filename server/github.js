@@ -29,7 +29,9 @@ async function boundedBody(response,limit,message){
 }
 
 async function get(url,fetcher,headers={}){
-  const response=await fetcher(url,{headers,redirect:'error',signal:AbortSignal.timeout(30000)});
+  let response;
+  try{response=await fetcher(url,{headers,redirect:'error',signal:AbortSignal.timeout(30000)});}
+  catch{throw new Error('Could not reach GitHub. Retry the import or upload the project as a ZIP file.');}
   if(response.status!==200){
     await response.body?.cancel();
     if(response.status===403||response.status===429)throw new Error('GitHub access is limited. Try again later or upload a ZIP file.');
@@ -40,8 +42,16 @@ async function get(url,fetcher,headers={}){
 }
 
 // Resolve an exact branch reference before downloading; never fetch a moving branch archive.
-export async function resolveGitHubSource(repo,branch='main',{fetcher=fetch}={}){
-  const source=parseSource(repo,branch);
+export async function resolveGitHubSource(repo,branch,{fetcher=fetch}={}){
+  const source=parseSource(repo,branch===undefined?'main':branch);
+  const headers={Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10','User-Agent':'Rahban'};
+  if(branch===undefined){
+    const response=await get(`https://api.github.com/repos/${source.owner}/${source.name}`,fetcher,headers);
+    const bytes=await boundedBody(response,256*1024,'GitHub repository response exceeds the size limit.');
+    let metadata;try{metadata=JSON.parse(bytes.toString('utf8'));}catch{throw new Error('GitHub returned invalid repository details.');}
+    branch=metadata?.default_branch;
+    parseSource(repo,branch);
+  }
   const response=await get(`https://api.github.com/repos/${source.owner}/${source.name}/git/ref/heads/${encodeURIComponent(branch)}`,fetcher,{
     Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10','User-Agent':'Rahban',
   });

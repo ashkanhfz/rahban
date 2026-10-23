@@ -5,7 +5,7 @@ import {mkdtempSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
-test('approved GitHub deployment keeps the reviewed commit and survives a restart without replay',{timeout:30000},async()=>{
+test('GitHub deployments remain pinned across restart, review updates and explicitly authorized automatic updates',{timeout:45000},async()=>{
   const dir=mkdtempSync(join(tmpdir(),'rahban-github-http-')),providerFile=join(dir,'github.json'),githubCalls=join(dir,'github-calls'),liaraCalls=join(dir,'liara-calls');
   let provider={commit:'a'.repeat(40)},server,output='',csrf,cookie;
   const setProvider=change=>{provider={...provider,...change};writeFileSync(providerFile,JSON.stringify(provider));};setProvider({});writeFileSync(githubCalls,'');writeFileSync(liaraCalls,'');
@@ -45,5 +45,42 @@ test('approved GitHub deployment keeps the reviewed commit and survives a restar
     assert.equal(recovered.jobs.length,1);assert.equal(recovered.jobs[0].id,initial.id);assert.equal(recovered.jobs[0].status,'succeeded');
     assert.equal(providerCalls().filter(call=>call.path?.endsWith('/releases')).length,1,'Restart must not replay deployment');
     assert.deepEqual(counts(),['reference','archive']);
+
+    const continuousPath='/services/deploy-test/continuous';
+    const schedule=await call(continuousPath,'POST',{enabled:true});
+    assert.equal(schedule.status,200,JSON.stringify(schedule.body));assert.equal(schedule.body.mode,'review');assert.equal(schedule.body.intervalMinutes,5);
+    const writesBeforeReview=providerCalls().filter(call=>call.method==='POST').length;
+    const review=await call(continuousPath+'/check','POST',{});
+    assert.equal(review.status,200);assert.equal(review.body.status,'awaiting_approval');assert.equal(review.body.pendingCommit,'b'.repeat(40));assert.ok(review.body.pendingApprovalId);
+    assert.equal(providerCalls().filter(call=>call.method==='POST').length,writesBeforeReview,'A review update must not mutate Liara');
+    const reviewedCalls=counts();const repeated=await call(continuousPath+'/check','POST',{});
+    assert.equal(repeated.body.pendingApprovalId,review.body.pendingApprovalId);assert.deepEqual(counts(),reviewedCalls,'An outstanding approval must not trigger another import');
+    const reviewApproval=(await call('/state')).body.approvals.find(row=>row.id===review.body.pendingApprovalId);
+    assert.equal(reviewApproval.status,'pending');let reviewed=await approve({status:200,body:reviewApproval});
+    if(reviewed.status==='needs_attention'){const verified=await call('/jobs/'+reviewed.id+'/verify','POST',{});assert.equal(verified.status,200);reviewed=verified.body;}
+    assert.equal(reviewed.status,'succeeded');assert.equal(reviewed.commit,'b'.repeat(40));
+    const reconciled=await call(continuousPath+'/check','POST',{});assert.equal(reconciled.body.pendingApprovalId,null);assert.equal(reconciled.body.latestCommit,'b'.repeat(40));assert.equal(reconciled.body.status,'scheduled');
+    const archivesAfterReview=counts().filter(kind=>kind==='archive').length,releasesAfterReview=providerCalls().filter(call=>call.path?.endsWith('/releases')).length;
+    assert.equal(releasesAfterReview,2);assert.equal(archivesAfterReview,2);
+    const unchanged=await call(continuousPath+'/check','POST',{});assert.equal(unchanged.body.status,'scheduled');
+    assert.equal(counts().filter(kind=>kind==='archive').length,archivesAfterReview);assert.equal(providerCalls().filter(call=>call.path?.endsWith('/releases')).length,releasesAfterReview);
+
+    const denied=await call(continuousPath,'POST',{enabled:true,mode:'automatic',confirmation:'another-app'});
+    assert.ok([400,409].includes(denied.status));assert.equal((await call(continuousPath)).body.mode,'review');
+    const authorized=await call(continuousPath,'POST',{enabled:true,mode:'automatic',confirmation:'deploy-test'});
+    assert.equal(authorized.status,200);assert.equal(authorized.body.mode,'automatic');
+    setProvider({commit:'c'.repeat(40)});
+    const automatic=await call(continuousPath+'/check','POST',{});assert.equal(automatic.status,200);assert.equal(automatic.body.status,'deploying');assert.ok(automatic.body.lastJobId);
+    const duplicate=await call(continuousPath+'/check','POST',{});assert.equal(duplicate.body.lastJobId,automatic.body.lastJobId);
+    let automaticJob=await waitFor(state=>state.jobs.find(job=>job.id===automatic.body.lastJobId&&job.status!=='running'));
+    if(automaticJob.status==='needs_attention'){const verified=await call('/jobs/'+automaticJob.id+'/verify','POST',{});assert.equal(verified.status,200);automaticJob=verified.body;}
+    assert.equal(automaticJob.status,'succeeded');assert.equal(automaticJob.commit,'c'.repeat(40));
+    assert.equal(providerCalls().filter(call=>call.path?.endsWith('/releases')).length,releasesAfterReview+1,'Automatic mode must submit exactly one release for the new commit');
+    assert.equal(counts().filter(kind=>kind==='archive').length,archivesAfterReview+1);
+    const automaticDone=await call(continuousPath+'/check','POST',{});assert.equal(automaticDone.body.pendingApprovalId,null);assert.equal(automaticDone.body.latestCommit,'c'.repeat(40));
+    await call(continuousPath+'/check','POST',{});assert.equal(counts().filter(kind=>kind==='archive').length,archivesAfterReview+1);assert.equal(providerCalls().filter(call=>call.path?.endsWith('/releases')).length,releasesAfterReview+1);
+    const disabled=await call(continuousPath,'POST',{enabled:false});assert.equal(disabled.body.enabled,false);assert.equal(disabled.body.nextRun,null);
+    setProvider({commit:'d'.repeat(40)});const beforeDisabledCheck=counts();
+    assert.equal((await call(continuousPath+'/check','POST',{})).status,409);assert.deepEqual(counts(),beforeDisabledCheck,'Disabled updates must not contact GitHub');
   }finally{await stop();rmSync(dir,{recursive:true,force:true});}
 });

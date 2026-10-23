@@ -49,8 +49,19 @@ test('missing references, rate limits and provider errors fail once without retr
     assert.equal(requests,1);
   }
   let requests=0;
-  await assert.rejects(resolveGitHubSource(source.repo,source.branch,{fetcher:async()=>{requests++;throw new Error('network unavailable');}}),/network unavailable/);
+  await assert.rejects(resolveGitHubSource(source.repo,source.branch,{fetcher:async()=>{requests++;throw new Error('network unavailable');}}),/Could not reach GitHub/);
   assert.equal(requests,1);
+});
+
+test('an omitted branch resolves the repository default before pinning its commit',async()=>{
+  const calls=[];
+  const result=await resolveGitHubSource(source.repo,undefined,{fetcher:async(url)=>{
+    calls.push(url);
+    return Response.json(calls.length===1?{default_branch:'master'}:{ref:'refs/heads/master',object:{type:'commit',sha:commit}});
+  }});
+  assert.equal(result.branch,'master');assert.equal(result.commit,commit);
+  assert.equal(calls[0],'https://api.github.com/repos/Example/project');
+  assert.match(calls[1],/\/git\/ref\/heads\/master$/);
 });
 
 test('streamed archives stop at the byte limit even when content length is absent or false',async()=>{

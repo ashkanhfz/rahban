@@ -46,7 +46,8 @@ export function inspect(files){
   const requiredEnv=env.filter(name=>!dockerDefaults.has(name)&&references.some(match=>match[1]===name&&!match[2]));
   const runnable=docker?/^\s*FROM\s+\S+/im.test(text('Dockerfile')):!!pkg.scripts?.start;
   const checks=[{name:docker?'Dockerfile found':'Node.js project found',ok:supported},{name:docker?'Base image specified':'Start command specified',ok:runnable},{name:'Known secret files excluded',ok:true}];
-  const deps=pkg.dependencies||{};const sizing={minMemoryGB:deps.next||deps['@nestjs/core']?1:.5,minCpu:.25};
+  const deps={...pkg.devDependencies,...pkg.dependencies},framework=deps.next?'Next.js':deps['@nestjs/core']?'NestJS':null;
+  const sizing={minMemoryGB:framework?1:.5,minCpu:.25,basis:framework?`${framework} appears in package.json, so the trial minimum is 1 GB RAM. CPU starts at 0.25 core; no runtime measurements or load test are available.`:'Generic trial minimum of 0.5 GB RAM and 0.25 CPU core. No runtime measurements or load test are available; Docker images may need more resources.'};
   return {name:pkg.name||'uploaded-project',platform,fileCount:Object.keys(files).length,env,requiredEnv,checks,sizing,ready:supported&&runnable,...detectPort(files),summary:supported?(docker?'Builds using Dockerfile.':'Runs using the Node.js start command.'):'A Dockerfile or package.json is required at the project root.'};
 }
 export async function archive(files){

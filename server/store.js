@@ -11,6 +11,7 @@ export function openStore(dir){
     CREATE TABLE IF NOT EXISTS probes(id INTEGER PRIMARY KEY, service TEXT, at INTEGER, ok INTEGER, ms REAL, code INTEGER);
   `);
   if(!db.prepare('PRAGMA table_info(probes)').all().some(c=>c.name==='mode'))db.exec("ALTER TABLE probes ADD COLUMN mode TEXT NOT NULL DEFAULT 'demo'");
+  if(!db.prepare('PRAGMA table_info(probes)').all().some(c=>c.name==='accountScope'))db.exec('ALTER TABLE probes ADD COLUMN accountScope TEXT');
   for(const old of db.prepare("SELECT * FROM records WHERE kind='service'").all()){const row=JSON.parse(old.body),key=row.mode+':'+row.id;if(old.id!==key){db.prepare('INSERT OR REPLACE INTO records VALUES(?,?,?,?)').run(key,'service',old.body,old.created);db.prepare('DELETE FROM records WHERE id=?').run(old.id);}}
   const put=(kind,body)=>{const row={...body,id:body.id||randomUUID(),created:body.created||new Date().toISOString()};const key=kind==='service'?row.mode+':'+row.id:row.id;db.prepare('INSERT OR REPLACE INTO records VALUES(?,?,?,?)').run(key,kind,JSON.stringify(row),row.created);return row;};
   const list=kind=>db.prepare('SELECT body FROM records WHERE kind=? ORDER BY created DESC LIMIT 100').all(kind).map(r=>JSON.parse(r.body));
