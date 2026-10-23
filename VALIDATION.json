@@ -1,81 +1,57 @@
 {
-  "checkedAt": "2026-10-23T14:04:22.965577+00:00",
-  "scope": "Dark Liara-style interface, manual pinned GitHub import, runtime identity and restart recovery; local and simulated-provider validation",
+  "checkedAt": "2026-10-23T15:44:14.583357+00:00",
+  "scope": "Liara deployment, app management, scheduled checks and GitHub updates; local runtime and simulated provider validation",
+  "origin": "http://localhost:4310",
   "status": "passed",
   "checks": [
     {
-      "name": "TypeScript",
-      "command": "npm run check",
+      "name": "TypeScript and production frontend",
+      "command": "npm run check && npm run build",
       "passed": true
     },
     {
       "name": "Unit and HTTP integration tests",
       "command": "npm test",
       "passed": true,
-      "tests": 41
+      "tests": 98
     },
     {
-      "name": "Production frontend",
-      "command": "npm run build",
-      "passed": true
-    },
-    {
-      "name": "Production dependency audit",
-      "command": "npm audit --omit=dev --audit-level=high",
+      "name": "Final management and account isolation regressions",
+      "command": "node --test tests/management-workflow.test.js tests/service-workflow.test.js",
       "passed": true,
-      "vulnerabilities": 0
+      "tests": 4,
+      "details": "Includes uncertainty beyond 100 history records, explicit approval, full environment preservation and no secret values in state or SQLite/WAL."
     },
     {
-      "name": "Docker image build and container health",
-      "command": "docker compose build app; docker compose up -d --no-build --wait app",
+      "name": "Docker image and running app",
       "passed": true,
-      "origin": "http://localhost:4310"
+      "details": "Built from cached dependencies, restarted without active operations, preserved instance identity and returned HTTP 200 from /healthz."
     },
     {
-      "name": "Browser smoke test in Chrome",
+      "name": "Chrome workflows with simulated providers",
       "passed": true,
       "checks": [
-        "Dark English LTR deployment interface",
-        "Sample Docker project detected; optional settings default to empty",
-        "Actual sandbox HTTP 503, diagnosis, approval, recovery and three HTTP checks",
-        "English incident report download",
-        "360px mobile layout without horizontal overflow",
-        "No browser JavaScript errors"
+        "GitHub import, default branch, plan review, app creation, release and three health checks",
+        "Retained drafts, retry and failed network selection",
+        "Raw resource metrics, scheduled checks, domain records and incident output",
+        "Environment value masking, app control proposals, deletion approval and history removal",
+        "GitHub update authorization and uncertain operation verification",
+        "360px and 390px layouts without overflow; no JavaScript errors"
       ]
     },
     {
-      "name": "First Docker deployment with simulated Liara responses",
+      "name": "Running Docker app in Chrome",
       "passed": true,
-      "details": "Create approval, immutable settings, Docker release payload, uncertain polling, manual recheck, and saved health settings."
-    },
-    {
-      "name": "New-service deployment flow in Chrome with simulated provider state",
-      "passed": true,
-      "details": "Create service, review project, approve deployment, and show the resulting website link."
-    },
-    {
-      "name": "Manual GitHub deployment and restart with simulated providers",
-      "passed": true,
-      "details": "Review makes no Liara mutations. A changed branch cannot alter the approved commit. Uncertain release verification preserves source metadata. Restart keeps instance identity, rotates boot ID, invalidates old sessions and never replays deployment."
-    },
-    {
-      "name": "Real public GitHub import in production Chrome",
-      "passed": true,
-      "repository": "https://github.com/hamid-shafi/java-log-monitoring-pipeline",
-      "commit": "26491d6d9857b69ec3636d6a2cbc1fd8daa99e06",
-      "downloadBytes": 34384,
       "checks": [
-        "Real GitHub import at pinned commit",
-        "Unsupported Java project explained before destination",
-        "Continue blocked until project ready",
-        "Runtime identity displayed",
-        "360px layout without overflow",
+        "Deployments home",
+        "Settings",
+        "Mobile layout",
         "No JavaScript errors"
       ]
     }
   ],
   "notRun": [
-    "Current revision deployed to Liara",
+    "Current revision deployed to a live Liara account",
     "Paid model request",
     "Windows start/stop scripts"
   ]
