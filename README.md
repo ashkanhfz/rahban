@@ -2,7 +2,7 @@
 
 A deployment assistant for Liara. Rahban inspects a project, prepares a deployment proposal, asks for approval, and checks the release and HTTP response. It supports projects with a Dockerfile and Node.js projects without one.
 
-The dark interface keeps the main workflow in **Deploy**, with **Check service** and **Settings** alongside it.
+The home page lists deployments. Each deployment has its own progress and result, with **Check service** and **Settings** on separate screens. Recent operations and history sit in the side panel.
 
 ## Run with Docker
 
@@ -26,14 +26,16 @@ On Windows, `scripts/start-local.ps1` builds and starts the application in the b
 
 ## First deployment
 
-1. Open **Settings**, enter the **Liara API token**, and use **Team account** for an optional team ID. Select **Connect and continue**. Connecting lists applications without creating or deploying one.
-2. In **Deploy → Project**, choose **Use sample project**, **Choose ZIP file**, or **Import from GitHub**. GitHub imports resolve the selected branch to a commit SHA before downloading the source. A root `Dockerfile` selects Docker; otherwise, Node.js requires `package.json` with a `start` script. The sample includes a Dockerfile. Uploaded code is not executed on the Rahban server.
-3. Continue to **Destination** and select a matching service. Under **Create a new service**, use **Get recommended plan**, then **Review cost and create** if needed. Account funding remains the user's responsibility.
-4. **Advanced settings** lets you change the detected port or 3000, health path `/`, five-second timeout, and enabled build cache. Empty fields use defaults. Set required environment variables in Liara; Rahban does not write their values automatically.
+1. Open **Settings** and enter the **Liara API token**. The visibility button lets you check what you entered. Set a Team ID only if your Liara resources belong to a team; leave it empty for your personal account. Connecting lists applications without creating or deploying one.
+2. Select **New deployment**, then **GitHub** or **ZIP file**. GitHub imports resolve the selected branch to a commit SHA before downloading the source. A root `Dockerfile` selects Docker; otherwise, Node.js requires `package.json` with a `start` script. A sample Docker project is available under ZIP. Uploaded code is not executed on the Rahban server.
+3. Continue to **Destination**. If there is no matching application, **New app** is selected. Enter its name and review the recommended plan's total estimate; **Change plan** exposes the optional choices. Approve creation to create a billable Liara application. Rahban selects the created app as the destination, ready for deployment. Use **Existing app** to select a compatible application instead. Account funding remains the user's responsibility.
+4. **Advanced settings** lets you change the detected port or 3000, health path `/`, five-second timeout, and enabled build cache. Empty fields use defaults. The health path is an HTTP route that should return a successful response, such as `/health` or the home page `/`. Set required environment variables in Liara; Rahban does not write their values automatically.
 5. Select **Review deployment**, then **Approve deployment**. In the confirmation dialog, enter the exact service name, check the approval box, and choose **Approve and run**. Rahban uploads the inspected archive and creates a release.
 6. Follow the release and HTTP checks. Success requires three consecutive 2xx responses. An uncertain release result shows **Needs review**; use **Check health again** before attempting another deployment. A successful deployment offers **Open website**.
 
-Without a token, the local demo supports an HTTP failure, diagnosis, and recovery with approval. It does not demonstrate a live Liara deployment.
+For a small Node.js deployment, import `https://github.com/liara-cloud/nodejs-getting-started`, branch `master`. Rahban detects port `3005`; use `/` for the health path. This example does not need a database.
+
+**Practice mode** in Settings enables a local sandbox for HTTP failure, diagnosis, and recovery with approval. It does not create a Liara application or demonstrate a live deployment. It is optional and stays out of the normal deployment flow.
 
 ## Analysis and limits
 
