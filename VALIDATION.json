@@ -13,7 +13,7 @@
       "name": "Unit and HTTP integration tests",
       "command": "npm test",
       "passed": true,
-      "tests": 105,
+      "tests": 106,
       "details": "Includes source/job restoration, account isolation, failure stages and redaction, fresh approval on retry, malformed log-response handling, slow successful HTTP responses requiring investigation, and no mutation replay."
     },
     {
@@ -33,7 +33,7 @@
       "passed": true,
       "details": "Cached Docker build passed TypeScript and production frontend checks. Restarted with no active jobs; /healthz returns HTTP 200. Credentials and team were reconnected, three Liara services synced, and the new frontend is served. Instance identity persisted, boot ID changed, and recovery was detected.",
       "origin": "http://localhost:4310",
-      "frontendAsset": "assets/index-CBtwPOnG.js"
+      "frontendAsset": "assets/index-fPAMheeP.js"
     },
     {
       "name": "Running app recovery in Chrome and HTTP",
@@ -61,6 +61,11 @@
       "passed": true,
       "environment": "local sandbox",
       "details": "Injected HTTP503, inspected configuration-error log evidence, approved restore with exact-name confirmation, verified three health checks, and downloaded a resolved Markdown incident report."
+    },
+    {
+      "name": "Live environment metadata with omitted disk information",
+      "passed": true,
+      "details": "Liara omitted disks while returning valid environment data. Environment names now return HTTP 200; values remain hidden and attached storage remains explicitly unknown. Regression covered in the 106-test suite."
     }
   ],
   "notRun": [

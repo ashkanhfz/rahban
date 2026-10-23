@@ -32,8 +32,9 @@ export function installManagement(app,{store,api,getMode,getScope,connected,getA
       throw fail(Number.isInteger(error.status)&&error.status>=400&&error.status<=599?error.status:502,'CONFIGURATION_UNAVAILABLE','Liara could not provide app configuration. Refresh the connection and try again.');
     }
     assertCurrent();
-    if(!details||!Array.isArray(details.envs)||details.envs.some(env=>typeof (env?.key||env?.name)!=='string')||!Array.isArray(details.disks))throw fail(502,'LIARA_INVALID_RESPONSE','Liara returned incomplete app configuration. Refresh before changing the app.');
-    const result={service:{id:row.id,name:row.name||row.id},platform:typeof (details.type||details.platform)==='string'?(details.type||details.platform):row.platform||'unknown',envKeys:[...new Set(details.envs.map(env=>env.key||env.name))].sort(),hasDisks:details.disks.length>0};
+    if(!details||!Array.isArray(details.envs)||details.envs.some(env=>typeof (env?.key||env?.name)!=='string'))throw fail(502,'LIARA_INVALID_RESPONSE','Liara returned incomplete app configuration. Refresh before changing the app.');
+    // Disk metadata is optional in Liara responses; missing data never means no disks.
+    const result={service:{id:row.id,name:row.name||row.id},platform:typeof (details.type||details.platform)==='string'?(details.type||details.platform):row.platform||'unknown',envKeys:[...new Set(details.envs.map(env=>env.key||env.name))].sort(),hasDisks:Array.isArray(details.disks)?details.disks.length>0:null};
     res.json(JSON.parse(safe(JSON.stringify(result))));
   }));
 }

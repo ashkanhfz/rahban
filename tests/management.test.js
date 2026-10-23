@@ -84,11 +84,22 @@ test('configuration uses the captured adapter and suppresses results after conne
   }
 });
 
+test('environment names remain available when Liara omits disk metadata without assuming no storage',async()=>{
+  const f=fixture();try{
+    for(const disks of [undefined,null,{unexpected:'private-disk-details'}]){
+      f.adapter.details=async()=>({type:'node',envs:[{key:'TOKEN',value:'private-env-value'},{key:'APP_PORT',value:'3000'}],...(disks===undefined?{}:{disks})});
+      const result=await f.configuration();
+      assert.deepEqual(result.envKeys,['APP_PORT','TOKEN']);assert.equal(result.hasDisks,null);
+      assert.ok(!JSON.stringify(result).includes('private-'));
+    }
+  }finally{f.close();}
+});
+
 test('configuration rejects missing connections, cross-account services and incomplete provider data without exposing values',async()=>{
   const f=fixture();try{
     f.state.connected=false;await assert.rejects(f.configuration(),error=>error.code==='LIARA_CONNECTION_REQUIRED');f.state.connected=true;
     f.state.scope='account-b';await assert.rejects(f.configuration(),error=>error.status===404);f.state.scope='account-a';assert.equal(f.calls.length,0);
-    for(const details of [null,{}, {envs:[{value:'private-env-value'}],disks:[]},{envs:[],disks:null},{envs:null,disks:[]}]){
+    for(const details of [null,{}, {envs:[{value:'private-env-value'}],disks:[]},{envs:null,disks:[]}]){
       f.adapter.details=async()=>details;await assert.rejects(f.configuration(),error=>error.code==='LIARA_INVALID_RESPONSE'&&!error.message.includes('private-env-value'));
     }
     f.adapter.details=async()=>{throw Object.assign(new Error('private-env-value private-api-token'),{status:403});};
