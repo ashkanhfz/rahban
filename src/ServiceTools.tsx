@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState} from 'react';
-import {ChevronDown, Copy, ExternalLink, RefreshCw} from 'lucide-react';
+import {ChevronDown, Copy, ExternalLink, Loader2, RefreshCw} from 'lucide-react';
 import './service-tools.css';
 
 type Row=Record<string,any>;
@@ -11,13 +11,19 @@ function Metric({name,metric}:{name:string;metric?:Row}){
 }
 export function ServiceTools({service,api,run,busy,onChecked}:Props){
   const [snapshot,setSnapshot]=useState<Row|null>(null),[monitor,setMonitor]=useState<Row|null>(null),[enabled,setEnabled]=useState(false),[interval,setIntervalMinutes]=useState(5),[domains,setDomains]=useState<Row[]|null>(null),[copied,setCopied]=useState('');
+  const [monitorLoading,setMonitorLoading]=useState(false),[monitorError,setMonitorError]=useState(''),[monitorAttempt,setMonitorAttempt]=useState(0);
+  const mounted=useRef(true);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const current=useRef('');current.current=(service?.accountScope||'')+':'+(service?.id||'');
   const prefix='/services/'+encodeURIComponent(service?.id||'');
   useEffect(()=>{
-    let active=true;setSnapshot(null);setDomains(null);setMonitor(null);setEnabled(false);setIntervalMinutes(5);
-    if(service)api(prefix+'/monitor').then(result=>{if(active){setMonitor(result);setEnabled(result.enabled);setIntervalMinutes(result.intervalMinutes);}}).catch(()=>{});
-    return()=>{active=false;};
+    setSnapshot(null);setDomains(null);setCopied('');
   },[service?.id,service?.accountScope]);
+  useEffect(()=>{
+    let active=true;setMonitor(null);setEnabled(false);setIntervalMinutes(5);setMonitorError('');setMonitorLoading(!!service);
+    if(service)api(prefix+'/monitor').then(result=>{if(active){setMonitor(result);setEnabled(result.enabled);setIntervalMinutes(result.intervalMinutes);}}).catch(error=>{if(active)setMonitorError(error.message);}).finally(()=>{if(active)setMonitorLoading(false);});
+    return()=>{active=false;};
+  },[service?.id,service?.accountScope,monitorAttempt]);
   if(!service)return null;
   const refresh=()=>run('resources',async()=>{const captured=current.current,result=await api(prefix+'/overview');if(captured===current.current)setSnapshot(result);});
   return <div className="service-tools">
@@ -28,10 +34,12 @@ export function ServiceTools({service,api,run,busy,onChecked}:Props){
       {!!snapshot?.limitations?.length&&<p className="field-note">{snapshot.limitations.join(' ')}</p>}
       <p className="field-note">Resource samples alone do not establish the cause of a slow response. Investigate to compare them with logs and HTTP checks.</p>
     </div></details>
-    <details className="fold"><summary>Scheduled checks<span className="muted">{monitor?.enabled?'On':'Off'}</span><ChevronDown size={15}/></summary><div className="fold-content">
+    <details className="fold"><summary>Scheduled checks<span className="muted">{monitorLoading?'Loading…':monitorError?'Unavailable':monitor?.enabled?'On':'Off'}</span><ChevronDown size={15}/></summary><div className="fold-content">
       <p className="field-note">Checks HTTP, logs and resource reports. Problems appear in Activity. Repairs always need your approval.</p>
-      <div className="row wrap"><label className="checkbox"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/>Enable health checks</label><div className="field monitor-interval"><label htmlFor="check-interval">Check every</label><select id="check-interval" value={interval} onChange={e=>setIntervalMinutes(Number(e.target.value))}>{[1,5,15,60].map(n=><option key={n} value={n}>{n} minute{n>1?'s':''}</option>)}</select></div></div>
-      <div className="row wrap"><button disabled={busy} onClick={()=>run('monitor',async()=>{const captured=current.current,result=await api(prefix+'/monitor','POST',{enabled,intervalMinutes:interval});if(captured===current.current)setMonitor(result);})}>Save schedule</button><button disabled={busy} onClick={()=>run('check',async()=>{const result=await api(prefix+'/check','POST',{});onChecked?.(result.incident.id);})}>Check now</button></div>
+      {monitorLoading&&<p className="request-status" role="status"><Loader2 size={14} className="spin"/>Loading schedule…</p>}
+      {monitorError&&<p className="notice warning" role="alert">{monitorError} <button className="inline-link" disabled={busy||monitorLoading} onClick={()=>setMonitorAttempt(value=>value+1)}>Retry schedule</button></p>}
+      <div className="row wrap"><label className="checkbox"><input type="checkbox" checked={enabled} disabled={busy||!monitor||monitorLoading} onChange={e=>setEnabled(e.target.checked)}/>Enable health checks</label><div className="field monitor-interval"><label htmlFor="check-interval">Check every</label><select id="check-interval" value={interval} disabled={busy||!monitor||monitorLoading} onChange={e=>setIntervalMinutes(Number(e.target.value))}>{[1,5,15,60].map(n=><option key={n} value={n}>{n} minute{n>1?'s':''}</option>)}</select></div></div>
+      <div className="row wrap"><button disabled={busy||!monitor||monitorLoading} onClick={()=>run('monitor',async()=>{const captured=current.current,result=await api(prefix+'/monitor','POST',{enabled,intervalMinutes:interval});if(captured===current.current)setMonitor(result);})}>Save schedule</button><button disabled={busy} onClick={()=>run('check',async()=>{const captured=current.current,result=await api(prefix+'/check','POST',{});if(mounted.current&&captured===current.current)onChecked?.(result.incident.id);})}>Check now</button></div>
       {monitor?.lastRun&&<p className="field-note">Last run: {stamp(monitor.lastRun)}{monitor.nextRun?' · Next: '+stamp(monitor.nextRun):''}</p>}
       {monitor?.lastError&&<p className="notice warning">{monitor.lastError}</p>}
       <p className="field-note">Runs while Rahban is online and this Liara account is connected. Missed checks are not replayed.</p>

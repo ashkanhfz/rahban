@@ -29,6 +29,7 @@ const number = (n: number) => Number(n).toLocaleString('en-US');
 const money = (n: number) => Math.round(Number(n)).toLocaleString('en-US');
 const pricedBundles = (plan?: Row) => (plan?.bundles || []).filter((item: Row) => item.monthlyPrice !== null && Number.isFinite(Number(item.monthlyPrice))).sort((a: Row, b: Row) => a.monthlyPrice - b.monthlyPrice);
 const featureValue = (value: unknown) => typeof value === 'boolean' ? value ? 'Included' : 'Not included' : String(value);
+const readPractice = () => {try {return sessionStorage.getItem('rahban.practice') === 'true';} catch {return false;}};
 const featureHelp: Record<string, string> = {
   'Deployments per day': 'Maximum deployments to this app each day.',
   'Custom domains': 'Maximum custom domain names connected to this app. Domain registration is separate.',
@@ -72,7 +73,7 @@ function App() {
   const [restoringSource, setRestoringSource] = useState(false), [sourceError, setSourceError] = useState(''), [restoreAttempt, setRestoreAttempt] = useState(0);
   const [loadedJob, setLoadedJob] = useState<Row|null>(null), [jobError, setJobError] = useState(''), [jobAttempt, setJobAttempt] = useState(0);
   const [previewLoading, setPreviewLoading] = useState(false), [previewError, setPreviewError] = useState(''), [previewAttempt, setPreviewAttempt] = useState(0);
-  const [practice, setPractice] = useState(false), [showToken, setShowToken] = useState(false), [showModelKey, setShowModelKey] = useState(false), [loadingPlans, setLoadingPlans] = useState(false);
+  const [practice, setPractice] = useState(readPractice), [showToken, setShowToken] = useState(false), [showModelKey, setShowModelKey] = useState(false), [loadingPlans, setLoadingPlans] = useState(false);
   const sourceRequest = useRef(0);
   const stateRequest = useRef(0), latestState = useRef<Row|null>(null), context = useRef('');
   context.current = [state?.mode, state?.settings?.team, state?.settings?.connectionId, state?.runtime?.bootId].join(':');
@@ -114,6 +115,7 @@ function App() {
   };
   const refreshPlans = () => run('plans', async () => {const current = captureView(); setLoadingPlans(true); try {const result = await api('/plans' + (source ? '?sourceId=' + source.id : '')); if (current()) acceptPlans(result);} finally {setLoadingPlans(false);}});
   useEffect(() => { renewSession().then(load).catch(error => setMessage(error.message)); const timer = setInterval(() => load().catch(() => {}), 4000); return () => clearInterval(timer); }, []);
+  useEffect(() => {try {sessionStorage.setItem('rahban.practice', String(practice));} catch { /* Browsing without storage still works for this page. */ }}, [practice]);
   useEffect(() => { if (state?.settings) { setTeam(state.settings.team || ''); setModelBase(state.settings.llmBase || ''); setModelName(state.settings.llmModel || ''); setShare(!!state.settings.shareEvidence); } }, [state?.settings?.team, state?.settings?.llmBase, state?.settings?.llmModel, state?.settings?.shareEvidence]);
   useEffect(() => {
     if (!state || destinationIntent.current || !source) return;

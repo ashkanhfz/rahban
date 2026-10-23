@@ -1,5 +1,8 @@
 import {performance} from 'node:perf_hooks';
 
+export const SLOW_RESPONSE_MS=1500;
+export const isSlowResponse=probe=>Number.isFinite(probe?.ms)&&probe.ms>=SLOW_RESPONSE_MS;
+
 // The caller pins the origin; redirects never forward a probe to another host.
 export async function probeHttp(url,{timeoutMs=5000,fetcher=fetch}={}){
   const start=performance.now();let code=0;

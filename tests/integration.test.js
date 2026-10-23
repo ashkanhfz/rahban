@@ -25,6 +25,11 @@ test('HTTP workflow: fail -> diagnose -> gate -> restore -> three passing checks
     let state;for(let n=0;n<30;n++){state=(await call('/state')).body;if(state.jobs.find(j=>j.id===executed.body.id)?.status==='succeeded')break;await new Promise(r=>setTimeout(r,250));}
     assert.equal(state.jobs.find(j=>j.id===executed.body.id).status,'succeeded');assert.equal(state.incidents.find(i=>i.id===incident.body.id).status,'resolved');
     assert.ok(state.jobs.find(j=>j.id===executed.body.id).steps.every(step=>step.status==='done'));
+    assert.equal((await call('/demo/fault','POST',{type:'slow'})).status,200);
+    const slow=await call('/incidents','POST',{target:'sandbox-store',message:'The site is slow'});
+    assert.equal(slow.body.probe.code,200);assert.ok(slow.body.probe.ms>=1500);
+    assert.equal(slow.body.status,'open');assert.equal(slow.body.severity,'warning');assert.equal(slow.body.title,'Service response is slow');
+    assert.ok(slow.body.hypotheses.some(hypothesis=>hypothesis.title==='Response time exceeds the investigation threshold'));
     const source=await call('/sources/sample','POST',{});assert.equal(source.body.ready,true);
     assert.equal(source.body.platform,'docker');
     const preview=await call('/deployment/preview','POST',{sourceId:source.body.id,settings:{port:null,healthPath:null,buildCache:false}});

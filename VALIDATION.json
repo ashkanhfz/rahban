@@ -1,7 +1,7 @@
 {
-  "checkedAt": "2026-10-23T16:21:53.248099+00:00",
-  "scope": "Browser navigation, deployment draft recovery and actionable operation failures",
-  "origin": "http://localhost:4310",
+  "checkedAt": "2026-10-23T16:42:36.110179+00:00",
+  "scope": "Deployment and operations audit, regression checks, and a recorded live Liara deployment",
+  "origin": "http://localhost:4330",
   "status": "passed",
   "checks": [
     {
@@ -13,8 +13,8 @@
       "name": "Unit and HTTP integration tests",
       "command": "npm test",
       "passed": true,
-      "tests": 103,
-      "details": "Includes source/job restoration, account isolation, failure stages, provider-message redaction, HTTP health failures, fresh approval on retry and no mutation replay."
+      "tests": 105,
+      "details": "Includes source/job restoration, account isolation, failure stages and redaction, fresh approval on retry, malformed log-response handling, slow successful HTTP responses requiring investigation, and no mutation replay."
     },
     {
       "name": "Chrome recovery and navigation with simulated providers",
@@ -29,19 +29,44 @@
       "details": "Legacy HTTP 409, visible provider error and failed stage, edit/review retry, uncertain-outcome verification, 320px and 390px layouts; no browser errors or provider writes."
     },
     {
-      "name": "Docker image and running app",
+      "name": "Current Docker image and running app",
       "passed": true,
-      "details": "Built from cached dependencies; restarted with no running jobs. Existing account/team connection restored. Health endpoint returns HTTP 200 and current frontend assets match the local build."
+      "details": "Cached Docker build passed TypeScript and production frontend checks. Restarted with no active jobs; /healthz returns HTTP 200. Credentials and team were reconnected, three Liara services synced, and the new frontend is served. Instance identity persisted, boot ID changed, and recovery was detected.",
+      "origin": "http://localhost:4310",
+      "frontendAsset": "assets/index-CBtwPOnG.js"
     },
     {
       "name": "Running app recovery in Chrome and HTTP",
       "passed": true,
       "details": "Actual recorded test1 failure is visible; direct job URL survives refresh and Settings return. Saved source metadata and old-job endpoints return successfully. No browser errors."
+    },
+    {
+      "name": "Live Liara app creation and deployment",
+      "passed": true,
+      "origin": "http://localhost:4330",
+      "environment": "live",
+      "app": "rahban-video-node-1023",
+      "deploymentJob": "e6e80835-ced9-4ae2-a3a3-e190569ebdac",
+      "url": "https://rahban-video-node-1023.liara.run",
+      "details": "A dedicated Node.js app was created through the approved UI workflow. The actual deployment reached Liara release state READY, then passed three consecutive HTTP health checks. The result and website are recorded for the demo."
+    },
+    {
+      "name": "Final Chrome regression audit",
+      "passed": true,
+      "scenarios": 7,
+      "details": "Schedule load failures and retry; no overwrite before load; stale service and GitHub responses ignored; practice mode refresh/exit; no JavaScript errors or mobile overflow. Provider responses simulated for fault scenarios."
+    },
+    {
+      "name": "Recorded practice diagnosis and approved recovery",
+      "passed": true,
+      "environment": "local sandbox",
+      "details": "Injected HTTP503, inspected configuration-error log evidence, approved restore with exact-name confirmation, verified three health checks, and downloaded a resolved Markdown incident report."
     }
   ],
   "notRun": [
-    "New live Liara app creation or deployment; provider writes were simulated",
     "Paid model request",
-    "Windows start/stop scripts"
+    "Windows start/stop scripts",
+    "New-commit-triggered automatic GitHub deployment during the demo",
+    "Live destructive app deletion/stop or live failure injection during the demo"
   ]
 }

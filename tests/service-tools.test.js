@@ -50,6 +50,12 @@ test('manual checks are labeled accurately and concurrent or scheduled duplicate
   gate.resolve({id:'incident-one',probe:{ok:1}});const result=await pending;
   assert.equal(result.job.status,'succeeded');assert.equal(result.job.scheduled,false);
 });
+test('a slow successful HTTP response still requires investigation',async t=>{
+  const f=fixture(t,{investigate:async()=>({id:'slow-incident',probe:{ok:1,code:200,ms:1700},status:'open',severity:'warning'})});
+  const result=await f.tools.check('app-one');
+  assert.equal(result.job.status,'needs_attention');assert.equal(result.job.incidentId,'slow-incident');
+  assert.match(result.job.message,/HTTP 200 responded in 1700ms/);assert.match(result.job.message,/slow-response investigation/);
+});
 
 test('scheduler serializes ticks, respects disabling during a run and does not repeat before due',async t=>{
   const gate=deferred(),calls=[];const f=fixture(t,{investigate:async(...args)=>{calls.push(args);return gate.promise;}});

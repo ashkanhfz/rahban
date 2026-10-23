@@ -65,7 +65,11 @@ export class Liara {
     return this.request('/v1/projects/update-envs',{method:'POST',json:{project:id,variables:variables.map(({key,value})=>({key,value}))}});
   }
   metricsSummary(id){return this.request(`/v1/projects/${encodeURIComponent(id)}/metrics/summary`);}
-  async logs(id){const x=await this.request(`/v2/projects/${encodeURIComponent(id)}/logs?start=${Math.floor(Date.now()/1000)-900}&direction=forward&last_lines=true`);return (x.data||[]).flatMap(g=>(g.values||[]).map(v=>({at:v[0],line:v[1]}))).slice(-150);}
+  async logs(id){
+    const x=await this.request(`/v2/projects/${encodeURIComponent(id)}/logs?start=${Math.floor(Date.now()/1000)-900}&direction=forward&last_lines=true`);
+    if(!Array.isArray(x?.data)||x.data.some(group=>!Array.isArray(group?.values)||group.values.some(value=>!Array.isArray(value)||!['string','number'].includes(typeof value[0])||typeof value[1]!=='string')))throw Object.assign(new Error('Liara returned an unexpected log response. Refresh logs; this response cannot establish that the app has no errors.'),{code:'LIARA_INVALID_RESPONSE'});
+    return x.data.flatMap(group=>group.values.map(value=>({at:value[0],line:value[1]}))).slice(-150);
+  }
   restart(id){return this.request(`/v1/projects/${encodeURIComponent(id)}/actions/restart`,{method:'POST'});}
   start(id){return this.request(`/v1/projects/${encodeURIComponent(id)}/actions/scale`,{method:'POST',json:{scale:1}});}
   stop(id){return this.request(`/v1/projects/${encodeURIComponent(id)}/actions/scale`,{method:'POST',json:{scale:0}});}

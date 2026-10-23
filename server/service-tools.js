@@ -1,6 +1,7 @@
 import {z} from 'zod';
 import {randomUUID} from 'node:crypto';
 import {collectServiceEvidence} from './observability.js';
+import {isSlowResponse} from './health.js';
 
 const monitorInput=z.object({enabled:z.boolean(),intervalMinutes:z.union([z.literal(1),z.literal(5),z.literal(15),z.literal(60)]).default(5)});
 const domainView=d=>({id:d._id,name:d.name,status:typeof d.status==='string'?d.status:'unknown',ssl:typeof d.certificatesStatus==='string'?d.certificatesStatus:'unknown',cname:typeof d.CNameRecord==='string'?d.CNameRecord:null});
@@ -36,7 +37,8 @@ export function installServiceTools(app,{store,api,liara,getMode,getScope,connec
       const incident=await investigate(row.id,scheduled?'Scheduled health check':'Manual health check',false);
       assertCurrent(scope);
       if(incident.accountScope&&incident.accountScope!==scope)throw new Error('The investigation belongs to another connection. Refresh this app.');
-      job=store.put('job',{...job,status:incident.probe?.ok?'succeeded':'needs_attention',incidentId:incident.id,steps:[{title:'HTTP, logs and resource reports checked',status:'done'}],message:incident.probe?.ok?'Check complete. Review the observations for warnings.':'Service needs attention. Review the investigation before changing anything.'});
+      const slow=isSlowResponse(incident.probe),needsAttention=!incident.probe?.ok||slow;
+      job=store.put('job',{...job,status:needsAttention?'needs_attention':'succeeded',incidentId:incident.id,steps:[{title:'HTTP, logs and resource reports checked',status:'done'}],message:slow&&incident.probe?.ok?`HTTP ${incident.probe.code} responded in ${Math.round(incident.probe.ms)}ms. Review the slow-response investigation before changing anything.`:needsAttention?'Service needs attention. Review the investigation before changing anything.':'Check complete. Review the observations for warnings.'});
       store.audit('monitor.checked',{target,jobId:job.id,incidentId:incident.id,scheduled});
       return clean({job,incident});
     }catch(error){

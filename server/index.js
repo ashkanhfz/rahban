@@ -12,7 +12,7 @@ import {Liara} from './liara.js';
 import {archive,inspect,unpackZip,sampleFiles,digest} from './source.js';
 import {redact,diagnose,llmAdvice} from './agent.js';
 import {recommendPlan,planCatalog} from './sizing.js';
-import {waitForHealthy,probeHttp} from './health.js';
+import {waitForHealthy,probeHttp,isSlowResponse} from './health.js';
 import {deploySettings,resolveSettings,previewDeployment} from './deployment.js';
 import {installAccess} from './access.js';
 import {resolveGitHubSource,downloadGitHubArchive} from './github.js';
@@ -364,7 +364,8 @@ async function investigate(target,message,useModel=true){
     probe(target,atMode,undefined,scope),
   ]);
   const evidence=JSON.parse(sanitize(JSON.stringify(rawEvidence))),logs=evidence.logs,hypotheses=diagnose(logs,latest,evidence);
-  const incident=store.put('incident',{mode:atMode,accountScope:scope,target,title:latest?.ok?'Service check':'Service is not responding correctly',status:latest?.ok?'observed':'open',severity:latest?.ok?'info':'warning',message:sanitize(message),logs:logs.slice(-15),probe:latest,metrics:evidence.metrics,service:evidence.service,limitations:evidence.limitations,hypotheses,engine:'rules',advice:null,limitation:['Based on observed logs, HTTP checks and available resource reports.',...evidence.limitations].join(' ')});
+  const slow=isSlowResponse(latest),needsAttention=!latest?.ok||slow;
+  const incident=store.put('incident',{mode:atMode,accountScope:scope,target,title:!latest?.ok?'Service is not responding correctly':slow?'Service response is slow':'Service check',status:needsAttention?'open':'observed',severity:needsAttention?'warning':'info',message:sanitize(message),logs:logs.slice(-15),probe:latest,metrics:evidence.metrics,service:evidence.service,limitations:evidence.limitations,hypotheses,engine:'rules',advice:null,limitation:['Based on observed logs, HTTP checks and available resource reports.',...evidence.limitations].join(' ')});
   if(useModel)try{const advice=await llmAdvice(credentials,{message:incident.message,logs:incident.logs,probe:latest,metrics:evidence.metrics,limitations:evidence.limitations,hypotheses});if(advice){incident.advice=sanitize(advice);incident.engine='llm';}}catch(e){incident.modelError=sanitize(e.message);}
   store.put('incident',incident);store.audit('incident.investigated',{id:incident.id,target,engine:incident.engine});return incident;
 }

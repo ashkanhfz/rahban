@@ -1,3 +1,5 @@
+import {isSlowResponse,SLOW_RESPONSE_MS} from './health.js';
+
 export function redact(value,secrets=[]){
   let text=typeof value==='string'?value:JSON.stringify(value);
   for(const secret of secrets.filter(Boolean))text=text.split(secret).join('[REDACTED]');
@@ -21,7 +23,7 @@ export function diagnose(logs,probe,evidence={}){
     const high=[...latest.values()].filter(sample=>sample.value>=90);
     if(high.length)hypotheses.push({title:`Possible ${label.toLowerCase()} pressure`,evidence:high.map(sample=>`${sample.applet||'instance'}: ${sample.value}% of limit`).join('; '),next:`Confirm the trend and configured ${label} limit. One sample does not establish the cause; review application behavior before requesting a resource change.`,confidence:'High utilization observed in explicitly normalized metrics; the cause still needs confirmation'});
   }
-  if(probe?.ms>=1500)hypotheses.push({title:'Response time exceeds the investigation threshold',evidence:`HTTP ${probe.code} / ${Math.round(probe.ms)}ms > 1500ms`,next:'Check dependency response times and recent changes. This sample alone does not prove a resource shortage.',confidence:'Slow response observed; the cause is still unknown'});
+  if(isSlowResponse(probe))hypotheses.push({title:'Response time exceeds the investigation threshold',evidence:`HTTP ${probe.code} / ${Math.round(probe.ms)}ms >= ${SLOW_RESPONSE_MS}ms`,next:'Check dependency response times and recent changes. This sample alone does not prove a resource shortage.',confidence:'Slow response observed; the cause is still unknown'});
   if(!hypotheses.length)hypotheses.push({title:probe?.ok?'No failure established in the current sample':'Insufficient evidence to identify the cause',evidence:probe?`Latest HTTP probe: ${probe.code} / ${Math.round(probe.ms)}ms`:'No health probe available yet',next:'Review logs and recent changes. Infrastructure changes need supporting evidence.',confidence:'Unknown'});
   return hypotheses.map((hypothesis,index)=>({rank:index+1,...hypothesis}));
 }

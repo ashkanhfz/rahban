@@ -1,4 +1,4 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {ChevronDown, GitBranch, Loader2, RefreshCw} from 'lucide-react';
 import './continuous.css';
 
@@ -16,21 +16,28 @@ const statuses: Record<string, string> = {disabled:'Off', scheduled:'Scheduled',
 export function ContinuousDeployment({service, api, run, busy, onReview}: Props) {
   const [saved, setSaved] = useState<Row|null>(null), [loading, setLoading] = useState(false), [error, setError] = useState('');
   const [enabled, setEnabled] = useState(false), [intervalMinutes, setIntervalMinutes] = useState(5), [mode, setMode] = useState('review'), [confirmation, setConfirmation] = useState('');
+  const request = useRef(0);
   const prefix = '/services/' + encodeURIComponent(service?.id || '') + '/continuous';
   const apply = (result: Row) => {setSaved(result); setEnabled(!!result.enabled); setIntervalMinutes(result.intervalMinutes || 5); setMode(result.mode || 'review'); setConfirmation(''); setError('');};
   useEffect(() => {
-    let active = true;
+    const pending = ++request.current;
     setSaved(null); setEnabled(false); setIntervalMinutes(5); setMode('review'); setConfirmation(''); setError('');
-    if (service?.github) {setLoading(true); api(prefix).then(result => {if (active) apply(result);}).catch(reason => {if (active) setError(reason.message);}).finally(() => {if (active) setLoading(false);});}
-    return () => {active = false;};
+    setLoading(!!service?.github);
+    if (service?.github) api(prefix).then(result => {if (pending === request.current) apply(result);}).catch(reason => {if (pending === request.current) setError(reason.message);}).finally(() => {if (pending === request.current) setLoading(false);});
+    return () => {request.current++;};
   }, [service?.id, service?.accountScope, service?.github?.repo, service?.github?.branch, service?.github?.commit]);
   if (!service?.github) return null;
   const dirty = saved && (enabled !== !!saved.enabled || intervalMinutes !== saved.intervalMinutes || mode !== saved.mode);
   const needsConfirmation = enabled && mode === 'automatic';
   const canSave = !!saved && !loading && !busy && (!enabled || (saved.eligible && (!needsConfirmation || confirmation === service.id)));
-  const refresh = () => run('github-updates', async () => {setLoading(true); try {apply(await api(prefix));} finally {setLoading(false);}});
-  const save = () => run('github-updates', async () => apply(await api(prefix, 'POST', {enabled, intervalMinutes, mode, ...(needsConfirmation ? {confirmation} : {})})));
-  const check = () => run('github-check', async () => apply(await api(prefix + '/check', 'POST', {})));
+  const update = (label: string, operation: () => Promise<Row>) => run(label, async () => {
+    const pending = ++request.current; setLoading(true);
+    try {const result = await operation(); if (pending === request.current) apply(result);}
+    finally {if (pending === request.current) setLoading(false);}
+  });
+  const refresh = () => update('github-updates', () => api(prefix));
+  const save = () => update('github-updates', () => api(prefix, 'POST', {enabled, intervalMinutes, mode, ...(needsConfirmation ? {confirmation} : {})}));
+  const check = () => update('github-check', () => api(prefix + '/check', 'POST', {}));
   const github = saved?.github || service.github;
 
   return <details className="fold github-updates"><summary>GitHub updates<span className="muted">{saved ? statuses[saved.status] || saved.status : ''}</span><ChevronDown size={15}/></summary><div className="fold-content">

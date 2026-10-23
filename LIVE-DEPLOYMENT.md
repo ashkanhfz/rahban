@@ -1,6 +1,16 @@
 # Verify a live Liara deployment
 
-This is a procedure for the current revision. It does not record a new successful live deployment.
+A live deployment was verified on 23 October 2026 using the recording instance at `http://localhost:4330`:
+
+- App: `rahban-video-node-1023`, created specifically for the demo.
+- Source: the public `liara-cloud/nodejs-getting-started` repository, deployed as Node.js on port 3005.
+- Deployment job: `e6e80835-ced9-4ae2-a3a3-e190569ebdac`.
+- Result: Liara reported the release as READY, and Rahban confirmed three consecutive successful HTTP health responses.
+- Website: [rahban-video-node-1023.liara.run](https://rahban-video-node-1023.liara.run).
+
+This is actual cloud-operation evidence. The separate Practice mode failure/recovery sequence uses a local sandbox. The recording previews management and automatic-update controls without claiming that a destructive operation or a new-commit-triggered automatic deployment ran. The main Docker instance at `http://localhost:4310` was also rebuilt and restarted with these changes. Its health endpoint passed, the Liara connection was restored, and all three account services were synchronized. The restart retained the instance identity and generated a new boot ID, with recovery detected.
+
+## Reproduce the workflow
 
 1. Open **Settings**, enter a valid **Liara API token**, and select **Connect and continue**. Keep the key out of reports, screenshots, and the repository.
 2. Select **New deployment → ZIP file → Use sample project** and continue to **Destination**. Review port 3000, health path `/`, and build settings under **Runtime settings**. Alternatively, import `https://github.com/liara-cloud/nodejs-getting-started` from GitHub, leaving the branch blank to use its default branch, for a Node.js app on port 3005.

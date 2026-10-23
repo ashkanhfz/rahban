@@ -8,6 +8,13 @@ test('Liara calls official origin with server bearer and optional team',async()=
 test('log API uses seconds, not milliseconds; flattens Liara streams',async()=>{
   let start;const client=new Liara(()=>({token:'x'}),async(url)=>{start=Number(url.searchParams.get('start'));return new Response(JSON.stringify({data:[{values:[['123','line']]}]}));});const logs=await client.logs('app');assert.ok(start<100000000000);assert.equal(logs[0].line,'line');
 });
+test('malformed log responses stay unavailable instead of claiming an empty log history',async()=>{
+  for(const response of [{},{data:null},{data:[{}]},{data:[{values:[[123,null]]}]},{data:[{values:[[{},'text']]}]}]){
+    const client=new Liara(()=>({token:'x'}),async()=>Response.json(response));
+    await assert.rejects(client.logs('app'),error=>error.code==='LIARA_INVALID_RESPONSE'&&error.message.includes('unexpected log response'));
+  }
+  const empty=new Liara(()=>({token:'x'}),async()=>Response.json({data:[]}));assert.deepEqual(await empty.logs('app'),[]);
+});
 test('summary metrics use the official read-only endpoint and preserve API values',async()=>{
   const expected={cpuUsage:[{applet:'one',value:[123,'0.5']}],memoryUsage:[]};
   const client=new Liara(()=>({token:'x',team:'team-one'}),async(url,init)=>{assert.equal(url.pathname,'/v1/projects/test-app/metrics/summary');assert.equal(url.searchParams.get('teamID'),'team-one');assert.equal(init.method,'GET');return Response.json(expected);});
