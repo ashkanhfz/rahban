@@ -11,7 +11,7 @@ test('HTTP workflow: fail -> diagnose -> gate -> restore -> three passing checks
   const base='http://127.0.0.1:4313';let csrf,cookie;
   async function call(path,method='GET',body){const r=await fetch(base+'/api'+path,{method,headers:{cookie,'Content-Type':'application/json','x-csrf-token':csrf},body:body?JSON.stringify(body):undefined});return {status:r.status,body:await r.json()};}
   try{
-    let ready=false;for(let n=0;n<60;n++){try{const r=await fetch(base+'/healthz');if(r.ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,150));}assert.ok(ready,output);
+    let ready=false;for(let n=0;n<60;n++){try{const r=await fetch(base+'/healthz');if(r.ok){assert.equal(r.headers.get('referrer-policy'),'same-origin');ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,150));}assert.ok(ready,output);
     const session=await fetch(base+'/api/session');cookie=session.headers.get('set-cookie').split(';')[0];csrf=(await session.json()).csrf;
     const noCsrf=await fetch(base+'/api/demo/fault',{method:'POST',headers:{cookie,'Content-Type':'application/json'},body:JSON.stringify({type:'error'})});assert.equal(noCsrf.status,403);
     const badOrigin=await fetch(base+'/api/session',{headers:{Origin:'https://attacker.example'}});assert.equal(badOrigin.status,403);

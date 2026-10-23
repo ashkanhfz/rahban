@@ -32,7 +32,8 @@ let mode='demo',demoFault=null,probeBusy=false;const demoLogs=[];
 const sessions=new Map();
 const liara=new Liara(()=>config);
 const app=express();app.disable('x-powered-by');
-app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'"],fontSrc:["'self'"],imgSrc:["'self'",'data:'],connectSrc:["'self'"],frameSrc:publicOrigin?["'none'"]:['http://localhost:4311','http://127.0.0.1:4311'],upgradeInsecureRequests:publicOrigin?[]:null}}}));
+// Keep same-origin form navigation origins observable for the login Origin gate.
+app.use(helmet({referrerPolicy:{policy:'same-origin'},contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'"],fontSrc:["'self'"],imgSrc:["'self'",'data:'],connectSrc:["'self'"],frameSrc:publicOrigin?["'none'"]:['http://localhost:4311','http://127.0.0.1:4311'],upgradeInsecureRequests:publicOrigin?[]:null}}}));
 app.use(express.json({limit:'200kb'}));
 app.use(express.urlencoded({extended:false,limit:'4kb'}));
 installAccess(app,{origin:publicOrigin,passwordHash:process.env.OPERATOR_PASSWORD_HASH||hosting.passwordHash,username:process.env.OPERATOR_USERNAME||hosting.username||'rahban'});
